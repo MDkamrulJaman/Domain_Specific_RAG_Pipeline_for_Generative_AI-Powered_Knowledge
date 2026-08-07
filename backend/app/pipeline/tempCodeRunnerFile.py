@@ -1,0 +1,1 @@
+from app.pipeline.embedder import EmbeddingService

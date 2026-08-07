@@ -1,0 +1,133 @@
+# =========================
+# PYTHON & VIRTUAL ENVIRONMENTS
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.env.local
+.env.*.local
+
+# =========================
+# IDE & EDITOR CONFIGURATIONS
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+.vim/
+
+# =========================
+# DEVELOPMENT & DEBUGGING
+# =========================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+*.cover
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+# =========================
+# DATABASE & DATA FILES
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+data/raw/*
+!data/raw/.gitkeep
+data/vectorstore/
+!data/vectorstore/.gitkeep
+*.faiss
+
+# =========================
+# LOGS & TEMPORARY FILES
+# =========================
+*.log
+logs/
+*.tmp
+*.temp
+temp/
+
+# =========================
+# OS SPECIFIC FILES
+# =========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# =========================
+# ENVIRONMENT & SECRETS
+# =========================
+.env
+.env.local
+.env.*.local
+secrets/
+*.pem
+*.key
+
+# =========================
+# DOCKER & DEPLOYMENT
+# =========================
+.dockerignore
+docker-compose.override.yml
+
+# =========================
+# NODE (if applicable)
+# =========================
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# =========================
+# MISC
+# =========================
+.ipynb_checkpoints
+*.ipynb_checkpoints
+.vscode-settings.json
+*.bak
+.idea/workspace.xml
+.run/
+pipeline/tempCodeRunnerFile.py

@@ -1,0 +1,82 @@
+# =========================
+# CORE API FRAMEWORK
+# =========================
+fastapi[standard]
+uvicorn[standard]
+
+# =========================
+# LANGCHAIN STACK (RAG)
+# =========================
+langchain
+langchain-community
+langchain-openai
+langchain-core
+langchain_ollama
+
+# =========================
+# OPENAI API
+# =========================
+openai
+
+# =========================
+# VECTOR DATABASE (LOCAL)
+# =========================
+faiss-cpu
+
+
+# =========================
+# sentence-transformers for embeddings
+# =========================
+sentence-transformers
+
+# =========================
+# DOCUMENT PROCESSING
+# =========================
+pypdf
+unstructured
+python-docx
+
+# =========================
+# TEXT SPLITTING / NLP HELPERS
+# =========================
+tiktoken
+
+# =========================
+# DATA VALIDATION
+# =========================
+pydantic
+pydantic-settings
+
+# =========================
+# ENV MANAGEMENT
+# =========================
+python-dotenv
+
+# =========================
+# HTTP REQUESTS (for testing / internal calls)
+# =========================
+requests
+
+# =========================
+# ASYNC SUPPORT (optional but useful)
+# =========================
+aiohttp
+
+# =========================
+# LOGGING
+# =========================
+logging
+
+# =========================
+# DEBUGGING
+# =========================
+pytest
+pytest-asyncio
+pytest-html
+
+# =========================
+# ML / DATA SCIENCE 
+# =========================
+numpy
+pandas
+scikit-learn
