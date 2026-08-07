@@ -1,0 +1,157 @@
+# =========================
+# FRONTEND (Next.js)
+# =========================
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env*
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# =========================
+# PYTHON & BACKEND
+# =========================
+
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.env.local
+.env.*.local
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+.vim/
+
+# testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+*.cover
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+# data files
+*.db
+*.sqlite
+*.sqlite3
+backend/data/raw/*
+!backend/data/raw/.gitkeep
+backend/data/vectorstore/*
+!backend/data/vectorstore/.gitkeep
+*.faiss
+
+# logs / temp
+*.log
+logs/
+*.tmp
+*.temp
+temp/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# env / secrets
+.env
+.env.local
+.env.*.local
+secrets/
+*.pem
+*.key
+
+# docker
+.dockerignore
+docker-compose.override.yml
+
+# node if used
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# misc
+.ipynb_checkpoints
+*.ipynb_checkpoints
+.vscode-settings.json
+*.bak
+.idea/workspace.xml
+.run/
+backend/pipeline/tempCodeRunnerFile.py
