@@ -73,7 +73,7 @@ class VectorStore:
             start_query = time.perf_counter()
             response = self.index.query(
                 vector=query_vector,
-                top_k=max(top_k * 2, top_k),
+                top_k=max(int(top_k * 2), top_k),
                 include_metadata=True,
                 namespace=self.namespace,
             )
