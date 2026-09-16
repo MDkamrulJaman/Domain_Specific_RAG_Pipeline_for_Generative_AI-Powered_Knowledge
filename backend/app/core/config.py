@@ -1,14 +1,19 @@
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    FRONTEND_URL: str
-    FRONTEND_PRODUCTION_URL: str
-    DATABASE_URL: str
-    SECRET_KEY: str
-    OLLAMA_BASE_URL: str = Field(default="http://localhost:11434/")
-    OLLAMA_MODEL: str = Field(default="gemma3")
-    OLLAMA_TIMEOUT_SECONDS: float = Field(default=30.0)
-
-    model_config = SettingsConfigDict(env_file=".env")
+    MODEL_BASE_URL: str
+    MODEL_NAME: str
+    MODEL_API_KEY: str
+    MODEL_TIMEOUT_SECONDS: float
+    MODEL_TEMPERATURE: float 
+    MODEL_TOP_P: float 
+    MODEL_MAX_TOKENS: int 
+    EMBEDDING_MODEL: str 
+    HF_TOKEN: str 
+    PINECONE_API_KEY: str
+    PINECONE_INDEX_NAME: str
+    PINECONE_DIMENSION: int
+    PINECONE_NAMESPACE: str 
+    PINECONE_MODEL: str 
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")

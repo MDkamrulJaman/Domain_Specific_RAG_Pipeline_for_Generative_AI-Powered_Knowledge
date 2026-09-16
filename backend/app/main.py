@@ -1,112 +1,172 @@
 import logging
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from dotenv import load_dotenv
+from pathlib import Path
 
-# 1. Load environment variables first
+import gradio as gr
+from dotenv import load_dotenv
+from fastapi import FastAPI, UploadFile
+
 load_dotenv()
 
 from app.api.app_router import backend_router
-from app.core.config import Settings
+from app.api.routes.ingest import upload_file
+from app.services.rag_service import RAGService
 
-# 2. Configure Production Logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-logger = logging.getLogger("ecu_rag_system")
+logger = logging.getLogger("rag_system")
 
-# 3. Initialize Global Settings instance
-settings = Settings()
+_rag_service = None
 
-# 4. Lifespan Management (Startup and Shutdown events)
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Logic to run on startup
-    logger.info("Initializing ECU RAG SYSTEM...")
-    try:
-        # Validate critical settings here if needed (e.g., database connections)
-        logger.info(f"Allowed CORS Origin: {settings.FRONTEND_URL}")
-    except Exception as e:
-        logger.error(f"Startup validation failed: {str(e)}")
-        raise e
-        
-    yield
-    
-    # Logic to run on shutdown
-    logger.info("Shutting down ECU RAG SYSTEM...")
 
-# 5. Initialize FastAPI App
+def get_rag_service():
+    global _rag_service
+    if _rag_service is None:
+        _rag_service = RAGService()
+    return _rag_service
+
 app = FastAPI(
-    title="ECU RAG SYSTEM",
+    title="RAG SYSTEM",
     description="Upload Files and Manage RAG Workflows",
     version="1.0.0",
-    lifespan=lifespan
 )
 
-# 6. Global Exception Handler (Bulletproof Error Handling)
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    """
-    Catches any unhandled exceptions, logs the full error on the server side,
-    and returns a clean, secure 500 JSON response to the client.
-    """
-    logger.error(f"Unhandled exception occurred on {request.url.path}: {str(exc)}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": "An internal server error occurred. Please try again later.",
-            "error_type": exc.__class__.__name__
-        }
-    )
-
-# 7. CORS Middleware Configuration
-origins = [settings.FRONTEND_URL] if settings.FRONTEND_URL else ["http://localhost:3000"]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],    
-    allow_headers=["*"],    
-)
-
-# 8. Register Routes
 app.include_router(backend_router)
 
 
-# 9. Core Endpoints
-@app.get("/", tags=["Root"])
+@app.get("/api", tags=["Root"])
 async def root():
-    return {"message": "Welcome to the ECU RAG SYSTEM API"}
+    return {"message": "Welcome to the RAG SYSTEM API"}
 
 
 @app.get("/health", tags=["Health"])
 async def health():
-    """
-    Health check endpoint for monitoring tools (e.g., AWS, Kubernetes, UptimeRobot).
-    """
     return {
         "status": "healthy",
-        "version": app.version
+        "version": app.version,
     }
 
 
-# 10. Local Development Execution
+def rag_answer(message, _history):
+    if not message.strip():
+        return "Please enter a question about your knowledge base."
+    try:
+        return get_rag_service().ask(message)
+    except Exception:
+        logger.exception("Gradio RAG request failed")
+        return "The RAG pipeline could not process your question. Check the backend logs."
+
+
+def vote(data: gr.LikeData):
+    value = (
+        data.value.get("value", "")
+        if isinstance(data.value, dict)
+        else str(data.value)
+    )
+    logger.info(
+        "RAG response %s: %s",
+        "liked" if data.liked else "disliked",
+        value[:200],
+    )
+
+
+async def ingest_file(file_path: str | None):
+    if not file_path:
+        return "Select a PDF or TXT file first."
+
+    path = Path(file_path)
+    if not path.is_file():
+        return "The selected file could not be found."
+
+    try:
+        with path.open("rb") as file:
+            upload = UploadFile(file=file, filename=path.name)
+            result = await upload_file(upload)
+        return result["message"]
+    except Exception:
+        logger.exception("Document ingestion failed for %s", path.name)
+        return "Document ingestion failed. Check the backend logs."
+
+
+with gr.Blocks(
+    title="RAG System",
+    theme=gr.themes.Base(
+        primary_hue="blue",
+        secondary_hue="slate",
+        neutral_hue="slate",
+    ),
+) as demo:
+    gr.HTML(
+        """
+        <nav class="navbar">
+            <div class="navbar-brand">RAG System</div>
+            <div class="navbar-links">
+                <a href="/">Pinecone Assistant</a>
+                <a href="/docs">API Docs</a>
+                <a href="/health">System Health</a>
+            </div>
+        </nav>
+        """
+    )
+    with gr.Row(equal_height=False):
+        with gr.Sidebar(open=True, width=260, elem_classes=["sidebar"]):
+            gr.Markdown("### Navigation", elem_classes=["sidebar-title"])
+            upload = gr.File(
+                label="Upload document",
+                file_types=[".pdf", ".txt"],
+                type="filepath",
+            )
+            upload_button = gr.Button("Upload and index", variant="primary")
+            upload_status = gr.Markdown()
+            upload_button.click(
+                ingest_file,
+                inputs=upload,
+                outputs=upload_status,
+            )
+            gr.Markdown(
+                "Use the assistant to search your indexed engineering knowledge base.\n\n",
+                elem_classes=["sidebar-copy"],
+            )
+            gr.Markdown(
+                "---\n_RAG SYSTEM v1.0.0_",
+                elem_classes=["sidebar-copy"],
+            )
+        with gr.Column():
+            gr.HTML(
+                """
+                <div class="hero">
+                    <h1>RAG System</h1>
+                    <p>Ask questions across your indexed engineering knowledge base.</p>
+                </div>
+                """
+            )
+            chatbot = gr.Chatbot(
+                label="Knowledge assistant",
+                height=520,
+                placeholder=(
+                    "<strong>Start a conversation</strong><br>"
+                    "Ask about your indexed documents..."
+                ),
+            )
+            chatbot.like(vote, None, None)
+            gr.ChatInterface(
+                fn=rag_answer,
+                chatbot=chatbot,
+                title="",
+                description=(
+                    "Answers are generated from your connected RAG pipeline."
+                ),
+                examples=[
+                    "Summarize the latest uploaded document",
+                    "What are the key system requirements?",
+                ],
+                submit_btn="Ask",
+            )
+
+gr.mount_gradio_app(app, demo, path="/")
+
 if __name__ == "__main__":
     import uvicorn
-    
-    logger.info("Starting local development server...")
-    try:
-        uvicorn.run(
-            "main:app",  # Assumes this file is named main.py
-            host="127.0.0.1", 
-            port=8000, 
-            reload=True
-        )
-    except KeyboardInterrupt:
-        logger.info("Server manually stopped by user.")
-    except Exception as e:
-        logger.critical(f"Server failed to start: {e}")
+
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)

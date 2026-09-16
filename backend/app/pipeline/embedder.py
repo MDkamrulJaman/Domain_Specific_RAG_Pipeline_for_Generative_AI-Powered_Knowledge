@@ -1,34 +1,34 @@
+import os
+import time
 import numpy as np
 from typing import List, Any
-from sentence_transformers import SentenceTransformer
-import logging
-
-
-# from loader import UniversalDocumentLoader
-# from chunker import DocumentSplitter
-
-
-# logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-# logger = logging.getLogger(__name__)
-
+from huggingface_hub import InferenceClient
+from app.core.config import Settings
 
 class EmbeddingService:
-    def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
+    def __init__(self):
+
+        settings = Settings()
+        self.model_name = settings.EMBEDDING_MODEL  # Use the model name from settings
         """
-        Initializes the SentenceTransformer model safely.
+        Initializes the Hugging Face inference client safely.
         """
         try:
-            self.model = SentenceTransformer(model_name)
+            self.model_name = settings.EMBEDDING_MODEL
+            self.client = InferenceClient(
+                provider="hf-inference",
+                api_key=settings.HF_TOKEN,
+            )
         except Exception as e:
             # In production, you'd use a proper logger here
-            print(f"CRITICAL: Failed to load embedding model '{model_name}': {e}")
-            self.model = None
+            print(f"CRITICAL: Failed to initialize Hugging Face client: {e}")
+            self.client = None
 
     def _ensure_model_loaded(self):
         """Internal helper to verify the model exists before encoding."""
-        if self.model is None:
+        if self.client is None:
             raise RuntimeError(
-                "Embedding model is not initialized. Check your internet connection or model name."
+                "Hugging Face inference client is not initialized. Check your HF_TOKEN."
             )
 
     def embed_chunks(self, chunks: List[Any]) -> np.ndarray:
@@ -40,8 +40,19 @@ class EmbeddingService:
         # Extract page content from the chunk objects
         texts = [c.page_content for c in chunks]
         
-        embeddings = self.model.encode(texts)
-        return np.array(embeddings).astype("float32")
+        if not texts:
+            return np.empty((0, 0), dtype="float32")
+
+        start_time = time.perf_counter()
+        embeddings = self.client.feature_extraction(
+            texts,
+            model=self.model_name,
+        )
+        print(
+            f"Embedding API completed in {time.perf_counter() - start_time:.3f} seconds "
+            f"for {len(texts)} chunks"
+        )
+        return np.asarray(embeddings, dtype="float32")
 
     def embed_query(self, query: str) -> np.ndarray:
         """
@@ -49,60 +60,15 @@ class EmbeddingService:
         """
         self._ensure_model_loaded()
         
-        embedding = self.model.encode(query)
+        start_time = time.perf_counter()
+        embedding = self.client.feature_extraction(
+            query,
+            model=self.model_name,
+        )
+        print(f"Query embedding API completed in {time.perf_counter() - start_time:.3f} seconds")
         # Keeps the 2D array structure matching your original code: shape (1, dimensions)
-        return np.array([embedding]).astype("float32")
+        return np.asarray([embedding], dtype="float32")
     
 
 
 
-
-   
-# # Local Development Execution test
-# def main():
-#     logger.info("Testing document loading and chunking functionality...")
-    
-#     # 1. Path for test PDF
-#     pdf_path = "data/raw"
-
-#     try:
-#         # 2. First, load the PDF file into documents
-#         logger.info(f"Attempting to load: {pdf_path}")
-#         loader_instance = UniversalDocumentLoader(str(pdf_path))
-#         docs = loader_instance.load_all_documents()
-        
-#         if not docs:
-#             logger.error("Loader returned an empty document list.")
-#             return
-
-#         logger.info(f"Successfully loaded document content. Parsing chunks next...")
-
-#         # 3. Pass those loaded documents into your DocumentSplitter chunking method
-#         chunks_loader = DocumentSplitter()
-#         chunks = chunks_loader.chunk_documents(docs)
-        
-#         # 4. Log out the results
-#         if chunks:
-#             logger.info(f"Success! Created {len(chunks)} text chunks.")
-#             logger.info("--- Sample Chunk 1 Preview ---")
-#             # Print out the first chunk text so you can visually verify the split quality
-#             logger.info(chunks[0] if isinstance(chunks[0], str) else getattr(chunks[0], 'page_content', chunks[0]))
-#         else:
-#             logger.warning("Chunking returned 0 chunks. Check your splitting logic strategy.")
-
-#         # 3. Pass those loaded documents into your DocumentSplitter chunking method
-#         embeddings_instance = EmbeddingService()
-#         embeddings= embeddings_instance.embed_chunks(chunks)
-        
-#         # 4. Log out the results
-#         if embeddings.any():  
-#             logger.info(f"Success! Created {embeddings.shape} .")
-#         else:
-#             logger.error(f"Embedding generation failed for {str(e)}")
-
-#     except Exception as e:
-#         logger.error(f"embedding execution test failed: {str(e)}", exc_info=True)
-
-    
-# if __name__ == "__main__":
-#     main()

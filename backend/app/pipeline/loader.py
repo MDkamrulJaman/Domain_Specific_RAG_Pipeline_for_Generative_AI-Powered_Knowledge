@@ -3,6 +3,7 @@ from pathlib import Path
 import logging
 from typing import List, Any
 from langchain_community.document_loaders import PyPDFLoader
+from langchain_core.documents import Document
 
 # Professional logging setup
 logger = logging.getLogger(__name__)
@@ -42,15 +43,7 @@ class UniversalDocumentLoader:
                 continue
 
             try:
-                suffix = file.suffix.lower()
-                
-                if suffix == ".pdf":
-                    loader = PyPDFLoader(str(file))
-                    docs.extend(loader.load())
-                    logger.info(f"Successfully loaded PDF: {file.name}")
-
-                else:
-                    logger.warning(f"Skipping unsupported file type: {file.name}")
+                docs.extend(self.load_file(file))
 
             except Exception as e:
                 # Log the error with stack trace details, but don't crash the loop
@@ -58,24 +51,20 @@ class UniversalDocumentLoader:
 
         return docs
 
+    def load_file(self, file_path: str | Path) -> List[Any]:
+        """Load one supported file so an upload cannot re-index older files."""
+        file = Path(file_path)
+        suffix = file.suffix.lower()
+
+        if suffix == ".pdf":
+            return PyPDFLoader(str(file)).load()
+        if suffix == ".txt":
+            return [
+                Document(
+                    page_content=file.read_text(encoding="utf-8", errors="replace"),
+                    metadata={"source": str(file)},
+                )
+            ]
+        raise ValueError(f"Unsupported file type: {suffix}")
 
 
-
-# # Local Development Execution test
-# def main():
-#     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-#     logger.info("Testing UniversalDocumentLoader class functionality...")
-    
-#     # Example local test run:
-#     test_dir = "data/raw"
-
-#     try:
-#         loader = UniversalDocumentLoader(target_directory=test_dir)
-#         documents = loader.load_all_documents()
-#         logger.info(f"Test complete. Total LangChain documents loaded: {len(documents)}")
-#     except Exception as e:
-#         logger.error(f"Loader execution test failed: {e}")
-
-
-# if __name__ == "__main__":
-#     main()

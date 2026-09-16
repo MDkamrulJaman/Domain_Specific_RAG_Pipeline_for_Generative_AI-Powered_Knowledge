@@ -1,30 +1,29 @@
-# ECU RAG System Backend
+﻿# RAG Backend
 
-A FastAPI-based Retrieval-Augmented Generation (RAG) backend for document ingestion, vector search, and LLM-powered Q&A. This service allows users to upload documents, index them into a local vector store, and ask domain-specific questions grounded in the uploaded content.
+This project is a lightweight backend for document ingestion, retrieval, and answer generation using a local RAG-style workflow. It is designed to help a frontend app or local tool search through uploaded documents and provide grounded responses based on retrieved context.
 
 ## Overview
 
-The backend is designed for document-centric knowledge retrieval and question answering using:
+The backend includes:
 
-- FastAPI for API exposure
-- LangChain for document processing and retrieval pipeline
-- FAISS for efficient vector similarity search
-- OpenAI / LLM-compatible services for generation
-- Pydantic for request validation
-- Local file-based document ingestion pipeline
+- a FastAPI application
+- document upload and ingestion flow
+- chunking and indexing for searchable content
+- vector similarity retrieval
+- prompt-based answer generation using an LLM
+- basic health and API routes
 
-This project is intended for use with a frontend application and supports a clean domain-specific knowledge assistant workflow.
+This service is intended for local development or controlled internal use. It is not intended to expose private content or credentials.
 
 ## Key Features
 
-- File upload and indexing for PDF documents
-- Document chunking and embedding generation
-- Vector store persistence using FAISS
-- Semantic retrieval for user queries
-- LLM-based answer generation with contextual grounding
-- REST endpoints for chat and ingestion
-- CORS-enabled API for frontend integration
-- Health monitoring route
+- Upload supported documents for indexing
+- Split content into manageable chunks
+- Generate embeddings for retrieval
+- Search the indexed content semantically
+- Use retrieved context to answer questions
+- Serve a simple API for chat and ingestion
+- Run locally or in a containerized environment
 
 ## Tech Stack
 
@@ -32,12 +31,10 @@ This project is intended for use with a frontend application and supports a clea
 - FastAPI
 - Uvicorn
 - LangChain
-- LangChain Community
-- OpenAI
 - FAISS
-- Pydantic / Pydantic Settings
+- Pydantic
 - Python Dotenv
-- PyPDF
+- PyPDF or similar document parsing library
 - pytest
 
 ## Project Structure
@@ -49,59 +46,69 @@ backend/
 │   ├── main.py
 │   ├── api/
 │   │   ├── app_router/
-│   │   │   ├── __init__.py
 │   │   │   └── app_router.py
 │   │   └── routes/
-│   │       ├── __init__.py
 │   │       ├── chat.py
 │   │       └── ingest.py
 │   ├── core/
 │   │   └── config.py
-│   ├── ecu_prompts/
-│   │   └── prompt.py
 │   ├── pipeline/
-│   │   ├── __init__.py
 │   │   ├── chunker.py
 │   │   ├── embedder.py
 │   │   ├── loader.py
-│   │   ├── retrieval_service.py
-│   │   └── tempCodeRunnerFile.py
+│   │   └── retrieval_service.py
 │   ├── schemas/
 │   │   ├── chat.py
 │   │   └── ingest.py
 │   ├── services/
-│   │   ├── __init__.py
 │   │   ├── llm_service.py
 │   │   └── rag_service.py
 │   └── utils/
 │       └── helpers.py
 ├── data/
-│   ├── raw/
-│   └── vectorstore/
+│   └── raw/
 ├── tests/
-│   ├── __init__.py
 │   ├── test_api_routes.py
 │   ├── test_chat.py
+│   ├── test_embeddings.py
+│   ├── test_llm_config.py
 │   └── test_retrival.py
 ├── .env
 ├── Dockerfile
 ├── README.md
 ├── requirements.txt
-└── run.py
+└── .gitignore
 ```
 
-## Environment Configuration
+## Privacy and Security Requirements
 
-Create a `.env` file in the backend root using the following structure:
+This project must be handled with strict privacy controls.
+
+- Never commit secrets, API tokens, passwords, or personal data to the repository.
+- Do not upload private documents, user content, or sensitive files to public repositories.
+- Keep local data files in a private workspace or secure storage location.
+- Use a local environment file only for non-sensitive configuration.
+- Ensure uploaded documents are not logged or exposed in error output.
+- Review any generated indexes, embeddings, or stored content before sharing the project.
+- If deployed in a real environment, use secure storage, access control, and audit logging.
+
+> Important: Never include real credentials or keys in source code, commits, screenshots, or documentation.
+
+## Local Configuration
+
+Create a local environment file only if your deployment needs it. Keep it private and do not commit it.
+
+Example structure only:
 
 ```env
-FRONTEND_URL=http://localhost:3000
-FRONTEND_PRODUCTION_URL=https://your-production-frontend-url.com
-DATABASE_URL=your_database_connection_string
-SECRET_KEY=your_secure_secret_key
+APP_ENV=local
+APP_PORT=8000
+MODEL_ENDPOINT=http://localhost:11434
+MODEL_NAME=local-model
+STORAGE_PATH=./data
 ```
 
-> Note: The actual environment variables used by the app may vary depending on the LLM provider and deployment setup. Make sure the values match your runtime configuration.
+Only keep non-sensitive defaults or locally managed values. Do not add secrets or API keys.
 
 ## Installation
 
@@ -111,7 +118,7 @@ SECRET_KEY=your_secure_secret_key
 python -m venv .venv
 ```
 
-### 2. Activate the virtual environment
+### 2. Activate the environment
 
 On Windows:
 
@@ -139,38 +146,23 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Production-style run
+### Standard app run
 
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-## API Endpoints
+## API Routes
 
-### Root
-
-```http
-GET /
-```
-
-Returns a welcome message for the backend application.
-
-### Health Check
+### Health check
 
 ```http
 GET /health
 ```
 
-Example response:
+Returns a basic status message for the application.
 
-```json
-{
-  "status": "healthy",
-  "version": "1.0.0"
-}
-```
-
-### Chat Endpoint
+### Chat endpoint
 
 ```http
 POST /chat/
@@ -180,50 +172,40 @@ Request body:
 
 ```json
 {
-  "query": "What is the summary of this document?",
+  "query": "Summarize the uploaded documents.",
   "top_k": 5
 }
 ```
 
-Response:
-
-```json
-{
-  "query": "What is the summary of this document?",
-  "answer": "Based on the retrieved context..."
-}
-```
-
-### Document Ingestion
+### Document ingestion endpoint
 
 ```http
 POST /ingest/upload
 ```
 
-Upload a supported file such as `.pdf` or `.txt` to be processed and indexed into the vector store.
+Uploads a supported file for processing and indexing.
 
 ## RAG Pipeline Flow
 
-The system follows this general flow:
+The project follows this general flow:
 
-1. User uploads a document.
-2. File is saved to the local raw data directory.
-3. Document is loaded and parsed.
-4. Content is chunked into smaller pieces.
-5. Embeddings are generated for each chunk.
-6. Chunks are stored in a local FAISS vector store.
-7. User question is sent to the retrieval and generation pipeline.
-8. Relevant chunks are fetched and injected into the LLM prompt.
-9. Final answer is returned to the client.
+1. A document is uploaded.
+2. The file is stored in a local working directory.
+3. The content is loaded and processed.
+4. Text is split into chunks.
+5. Each chunk is embedded.
+6. Relevant chunks are retrieved for a given query.
+7. The LLM is given retrieved context and produces a response.
 
-## Data Storage
+## Data Handling
 
-The application stores:
+The application may store:
 
-- uploaded raw files under `data/raw/`
-- indexed vector data under `data/vectorstore/`
+- uploaded files in a local directory
+- generated indexes or vector data in a local folder
+- temporary processing files during local runs
 
-This setup is suitable for local development and lightweight deployment scenarios.
+This project should be used only with data that is approved for local processing and not with highly sensitive information unless proper safeguards are in place.
 
 ## Testing
 
@@ -233,66 +215,51 @@ Run the test suite with:
 pytest
 ```
 
-If using async tests or environment-based setup, ensure the relevant environment variables are loaded correctly before execution.
-
-## Docker Support
-
-A Dockerfile is included for containerized backend deployment.
+## Docker
 
 Build the image:
 
 ```bash
-docker build -t ecu-rag-backend .
+docker build -t rag-backend .
 ```
 
 Run the container:
 
 ```bash
-docker run -p 8000:8000 ecu-rag-backend
+docker run -p 8000:8000 rag-backend
 ```
 
 ## Notes
 
-- This project is designed for local and demo-grade RAG use cases.
-- For production deployment, consider using:
-  - a managed vector database
-  - secure environment variable management
-  - more robust authentication and authorization
-  - model rate-limit and retry handling
-  - monitoring and observability tools
+- This project is intended for local or controlled deployment scenarios.
+- For production use, add stronger access control, secure secret management, and monitored storage.
+- Avoid exposing user-uploaded content in public logs, demos, or screenshots.
 
 ## License
 
-This project is intended for educational and internal application use unless a separate license is specified.
-
-## Maintainers
-
-This backend is typically maintained by the project owner or development team responsible for the AI and retrieval pipeline.
+This project is provided for educational, internal, or prototype use unless a separate license is applied.
 
 ## Troubleshooting
 
-### Common issues
-
-#### 1. Module import errors
-
-Make sure you are running the app from the backend directory and that dependencies are installed correctly.
+### Import or dependency issues
 
 ```bash
 pip install -r requirements.txt
 ```
 
-#### 2. Frontend CORS errors
+### Local runtime issues
 
-Verify that `FRONTEND_URL` in `.env` matches the frontend origin exactly.
+- confirm the virtual environment is active
+- check the app startup command
+- verify the application is running from the backend directory
+- confirm local directories are writable
 
-#### 3. Vector store initialization fails
+### Upload problems
 
-Check if the `data/vectorstore/` directory exists and is writable.
-
-#### 4. Upload fails for certain file types
-
-Only allowed file extensions are accepted. Check the `ALLOWED_EXTENSIONS` configuration in the ingestion route.
+- confirm the file type is supported
+- validate the local storage path is available
+- check application logs for any validation errors
 
 ---
 
-This backend provides a solid foundation for a production-ready domain-specific RAG application and can be scaled further with enterprise-grade storage, authentication, monitoring, and deployment tooling.
+This project is a basic RAG backend template and should be used with careful attention to privacy, safe data handling, and local-only configuration.

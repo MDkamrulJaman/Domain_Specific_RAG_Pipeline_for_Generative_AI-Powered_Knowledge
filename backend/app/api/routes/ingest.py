@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 ingest_router = APIRouter(prefix="/ingest", tags=["Ingest"])
 
-# Ensure directory exists safely
+# Test: Ensure directory exists safely
 upload_dir = Path("data/raw")
 upload_dir.mkdir(parents=True, exist_ok=True)
 
@@ -21,7 +21,7 @@ ALLOWED_EXTENSIONS = {".pdf", ".txt"}
 
 # Initialize VectorStore with clean fallback error handling
 try:
-    vectorstore = VectorStore("data/vectorstore")
+    vectorstore = VectorStore()
 except Exception as e:
     logger.critical(f"Failed to initialize VectorStore: {str(e)}")
     raise RuntimeError("VectorStore initialization failed.") from e
@@ -72,7 +72,7 @@ async def upload_file(file: UploadFile = File(...) ):
         # 3. Load Document
         try:
             loader_instance = UniversalDocumentLoader(str(upload_dir))
-            docs = loader_instance.load_all_documents()
+            docs = loader_instance.load_file(file_path)
             
             if not docs:
                 raise ValueError("Document loader returned empty data.")
@@ -98,19 +98,9 @@ async def upload_file(file: UploadFile = File(...) ):
                 detail="Failed to split the document into digestible text chunks."
             )
 
-        # 5. Generate Embeddings
+        # 5. Create Hugging Face vectors, then store them in Pinecone.
         try:
-            embeddings_instance = EmbeddingService()
-            embeddings= embeddings_instance.embed_chunks(chunks)
-        except Exception as e:
-            logger.error(f"Embedding generation failed for {file.filename}: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to generate text embeddings from the model library."
-            )
-
-        # 6. Save to VectorStore (Simple, direct execution)
-        try:
+            embeddings = EmbeddingService().embed_chunks(chunks)
             vectorstore.add(embeddings, chunks)
             vectorstore.save()
         except Exception as e:

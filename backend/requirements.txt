@@ -19,9 +19,9 @@ langchain_ollama
 openai
 
 # =========================
-# VECTOR DATABASE (LOCAL)
+# VECTOR DATABASE
 # =========================
-faiss-cpu
+pinecone
 
 
 # =========================
@@ -65,8 +65,6 @@ aiohttp
 # =========================
 # LOGGING
 # =========================
-logging
-
 # =========================
 # DEBUGGING
 # =========================
