@@ -17,7 +17,7 @@ class RAGService:
             logger.critical(f"RAG component initialization failed: {str(e)}")
             raise
 
-    def ask(self, query: str, top_k: int = 5) -> str:
+    def ask(self, query: str, top_k: int) -> str:
         start_time = time.perf_counter()
 
         if not query or not query.strip():

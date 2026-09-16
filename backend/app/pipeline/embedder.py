@@ -1,9 +1,12 @@
 import os
 import time
+import logging
 import numpy as np
 from typing import List, Any
 from huggingface_hub import InferenceClient
 from app.core.config import Settings
+
+logger = logging.getLogger(__name__)
 
 class EmbeddingService:
     def __init__(self):
@@ -48,7 +51,7 @@ class EmbeddingService:
             texts,
             model=self.model_name,
         )
-        print(
+        logger.info(
             f"Embedding API completed in {time.perf_counter() - start_time:.3f} seconds "
             f"for {len(texts)} chunks"
         )

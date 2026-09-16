@@ -13,11 +13,22 @@ ingest_router = APIRouter(prefix="/ingest", tags=["Ingest"])
 
 ALLOWED_EXTENSIONS = {".pdf", ".txt"}
 
-try:
-    vectorstore = VectorStore()
-except Exception as e:
-    logger.critical(f"Failed to initialize VectorStore: {str(e)}")
-    raise RuntimeError("VectorStore initialization failed.") from e
+vectorstore = None
+
+
+def get_vectorstore() -> VectorStore:
+    """Create the vector store only when an upload actually needs it."""
+    global vectorstore
+    if vectorstore is None:
+        try:
+            vectorstore = VectorStore()
+        except Exception as error:
+            logger.exception("Failed to initialize VectorStore")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Vector store is currently unavailable.",
+            ) from error
+    return vectorstore
 
 
 @ingest_router.post(
@@ -43,22 +54,31 @@ async def upload_file(file: UploadFile = File(...)):
     try:
         await file.seek(0)
         content = await file.read()
+        logger.info("Starting ingestion for '%s' (%d bytes)", file.filename, len(content))
         if not content:
             raise ValueError("Uploaded file is empty.")
 
         loader_instance = UniversalDocumentLoader()
         docs = loader_instance.load_bytes(file.filename, content)
+        logger.info("Loaded %d document(s) from '%s'", len(docs), file.filename)
         if not docs:
             raise ValueError("Document loader returned empty data.")
 
         chunks_instance = DocumentSplitter()
         chunks = chunks_instance.chunk_documents(docs)
+        logger.info("Created %d chunk(s) for '%s'", len(chunks), file.filename)
         if not chunks:
             raise ValueError("Splitting resulted in 0 chunks.")
 
         embeddings = EmbeddingService().embed_chunks(chunks)
-        vectorstore.add(embeddings, chunks)
-        vectorstore.save()
+        if embeddings.size == 0:
+            raise ValueError("Embedding service returned no embeddings.")
+        logger.info("Generated %d embedding(s) for '%s'", len(embeddings), file.filename)
+
+        store = get_vectorstore()
+        store.add(embeddings, chunks)
+        store.save()
+        logger.info("Finished ingestion for '%s'", file.filename)
 
         return {
             "status": "success",

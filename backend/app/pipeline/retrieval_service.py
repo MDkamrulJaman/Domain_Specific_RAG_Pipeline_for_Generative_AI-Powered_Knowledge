@@ -19,7 +19,11 @@ class VectorStore:
         self.client = Pinecone(api_key=settings.PINECONE_API_KEY)
         self.index_name = settings.PINECONE_INDEX_NAME
         index_info = self.client.describe_index(self.index_name)
-        if index_info.dimension != settings.PINECONE_DIMENSION:
+        schema = getattr(index_info, "schema", None)
+        schema_fields = getattr(schema, "fields", {}) if schema else {}
+        self.integrated_embedding = "text" in schema_fields
+
+        if not self.integrated_embedding and index_info.dimension != settings.PINECONE_DIMENSION:
             raise RuntimeError(
                 f"Pinecone index '{self.index_name}' has dimension "
                 f"{index_info.dimension}, expected {settings.PINECONE_DIMENSION}."
@@ -53,7 +57,21 @@ class VectorStore:
 
         if records:
             start = time.perf_counter()
-            self.index.upsert(vectors=records, namespace=self.namespace)
+            if self.integrated_embedding:
+                integrated_records = [
+                    {
+                        "_id": record["id"],
+                        "text": record["metadata"]["text"],
+                        "source": record["metadata"]["source"],
+                    }
+                    for record in records
+                ]
+                self.index.upsert_records(
+                    records=integrated_records,
+                    namespace=self.namespace,
+                )
+            else:
+                self.index.upsert(vectors=records, namespace=self.namespace)
             elapsed = time.perf_counter() - start
             logger.info(
                 "Pinecone upsert completed in %.3f seconds for %d records.",
@@ -61,7 +79,7 @@ class VectorStore:
                 len(records),
             )
 
-    def search(self, query: str, top_k: int):
+    def search(self, query: str, top_k: int = 5):
         if not query or not query.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -69,22 +87,38 @@ class VectorStore:
             )
 
         try:
-            query_vector = EmbeddingService().embed_query(query)[0].tolist()
             start_query = time.perf_counter()
-            response = self.index.query(
-                vector=query_vector,
-                top_k=max(int(top_k * 2), top_k),
-                include_metadata=True,
-                namespace=self.namespace,
-            )
+            if self.integrated_embedding:
+                response = self.index.search(
+                    namespace=self.namespace,
+                    query={
+                        "inputs": {"text": query},
+                        "top_k": max(top_k * 2, top_k),
+                    },
+                    fields=["text", "source"],
+                )
+                hits = getattr(getattr(response, "result", None), "hits", [])
+                documents = [
+                    hit.fields.get("text", "")
+                    for hit in hits
+                    if getattr(hit, "fields", None) and hit.fields.get("text")
+                ]
+            else:
+                query_vector = EmbeddingService().embed_query(query)[0].tolist()
+                response = self.index.query(
+                    vector=query_vector,
+                    top_k=max(top_k * 2, top_k),
+                    include_metadata=True,
+                    namespace=self.namespace,
+                )
+                documents = [
+                    match.metadata.get("text", "")
+                    for match in response.matches
+                    if match.metadata and match.metadata.get("text")
+                ]
             query_elapsed = time.perf_counter() - start_query
             logger.info("Pinecone query completed in %.3f seconds.", query_elapsed)
 
-            documents = [
-                match.metadata.get("text", "")
-                for match in response.matches
-                if match.metadata and match.metadata.get("text")
-            ]
             if not documents:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
