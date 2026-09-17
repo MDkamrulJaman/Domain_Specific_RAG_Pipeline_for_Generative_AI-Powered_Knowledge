@@ -1,0 +1,15 @@
+fastapi[standard]
+uvicorn[standard]
+gradio
+python-multipart
+python-dotenv
+pydantic
+pydantic-settings
+openai
+pinecone
+huggingface-hub
+numpy
+langchain-core
+langchain-community
+langchain-text-splitters
+pypdf

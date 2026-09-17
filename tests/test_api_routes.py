@@ -1,4 +1,4 @@
-from app.api.app_router import api_router, build_api_router
+from src.api.app_router import api_router, build_api_router
 from fastapi import APIRouter
 
 
