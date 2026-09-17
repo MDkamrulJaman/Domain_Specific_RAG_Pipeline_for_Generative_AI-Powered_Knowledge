@@ -128,7 +128,7 @@ def create_demo():
 					description="Answers are generated from your connected RAG pipeline.",
 					examples=[
 						"Write down about the git commands",
-						"What are the key system requirements?",
+						"Write git commands ?",
 					],
 					submit_btn="Ask",
 				)
