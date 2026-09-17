@@ -40,43 +40,49 @@ This service is intended for local development or controlled internal use. It is
 ## Project Structure
 
 ```text
-backend/
-├── app/
-│   ├── __init__.py
-│   ├── main.py
-│   ├── api/
-│   │   ├── app_router/
-│   │   │   └── app_router.py
-│   │   └── routes/
-│   │       ├── chat.py
-│   │       └── ingest.py
-│   ├── core/
-│   │   └── config.py
-│   ├── pipeline/
-│   │   ├── chunker.py
-│   │   ├── embedder.py
-│   │   ├── loader.py
-│   │   └── retrieval_service.py
-│   ├── schemas/
-│   │   ├── chat.py
-│   │   └── ingest.py
-│   ├── services/
-│   │   ├── llm_service.py
-│   │   └── rag_service.py
-│   └── utils/
-│       └── helpers.py
-├── data/
-│   └── raw/
+.
+├── backend/
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── main.py
+│   │   ├── requirements.txt
+│   │   ├── api/
+│   │   │   ├── app_router/
+│   │   │   │   ├── __init__.py
+│   │   │   │   └── app_router.py
+│   │   │   └── routes/
+│   │   │       ├── __init__.py
+│   │   │       ├── chat.py
+│   │   │       └── ingest.py
+│   │   ├── core/
+│   │   │   └── config.py
+│   │   ├── ecu_prompts/
+│   │   │   └── prompt.py
+│   │   ├── pipeline/
+│   │   │   ├── __init__.py
+│   │   │   ├── chunker.py
+│   │   │   ├── embedder.py
+│   │   │   ├── loader.py
+│   │   │   └── retrieval_service.py
+│   │   ├── schemas/
+│   │   │   ├── chat.py
+│   │   │   └── ingest.py
+│   │   ├── services/
+│   │   │   ├── __init__.py
+│   │   │   ├── llm_service.py
+│   │   │   └── rag_service.py
+│   │   ├── ui/
+│   │   │   └── frontend.py
+│   │   └── utils/
+│   │       └── helpers.py
+│   ├── requirements.txt
+│   ├── .env
+│   └── .gitignore
 ├── tests/
-│   ├── test_api_routes.py
-│   ├── test_chat.py
-│   ├── test_embeddings.py
-│   ├── test_llm_config.py
-│   └── test_retrival.py
-├── .env
+│   ├── __init__.py
+│   └── test_api_routes.py
 ├── Dockerfile
 ├── README.md
-├── requirements.txt
 └── .gitignore
 ```
 
