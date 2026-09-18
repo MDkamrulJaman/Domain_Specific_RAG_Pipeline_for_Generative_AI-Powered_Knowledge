@@ -1,9 +1,8 @@
 ﻿# RAG Backend
 
 This project is a lightweight backend for document ingestion, retrieval, and answer generation using a local RAG-style workflow. It is designed to help a frontend app or local tool search through uploaded documents and provide grounded responses based on retrieved context.
-
+## Live Preview:  https://generative-ai-powered-retrieval-system-for-technical-d.fastapicloud.dev
 ## Overview
-
 The backend includes:
 
 - a FastAPI application
