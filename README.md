@@ -125,3 +125,5 @@ python -m pytest -q
 ```
 
 Tests mock remote providers and build UI components without starting a server.
+
+See [the test suite guide](tests/README.md) for the feature-by-feature test map and focused test commands.
