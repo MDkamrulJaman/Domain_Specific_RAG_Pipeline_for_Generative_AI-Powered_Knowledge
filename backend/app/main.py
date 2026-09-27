@@ -36,10 +36,12 @@ async def health():
     }
 
 
+logger.info("Building Gradio UI...")
 gradio_demo = create_demo()
 mount_demo(app, gradio_demo)
+logger.info("Application setup complete; waiting for ASGI startup.")
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

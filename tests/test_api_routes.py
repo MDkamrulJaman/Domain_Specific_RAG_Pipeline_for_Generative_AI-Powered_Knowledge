@@ -1,11 +1,12 @@
-from src.api.app_router import api_router, build_api_router
-from fastapi import APIRouter
+from app.api.app_router import api_router, build_api_router
+from fastapi import APIRouter, FastAPI
 
 
 def test_shared_api_router_exposes_expected_routes():
-    paths = {route.path for route in api_router.routes if hasattr(route, "path")}
+    app = FastAPI()
+    app.include_router(api_router)
+    paths = app.openapi()["paths"]
 
-    assert "/chat/" in paths
     assert "/chat/stream" in paths
     assert "/ingest/upload" in paths
 
@@ -18,6 +19,8 @@ def test_build_api_router_composes_custom_routers():
         return {"status": "ok"}
 
     composed_router = build_api_router(extra_router)
-    paths = {route.path for route in composed_router.routes if hasattr(route, "path")}
+    app = FastAPI()
+    app.include_router(composed_router)
+    paths = app.openapi()["paths"]
 
     assert "/health/" in paths

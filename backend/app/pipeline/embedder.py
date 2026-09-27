@@ -4,14 +4,14 @@ import logging
 import numpy as np
 from typing import List, Any
 from huggingface_hub import InferenceClient
-from app.core.config import Settings
+from app.core.config import RetrievalSettings
 
 logger = logging.getLogger(__name__)
 
 class EmbeddingService:
     def __init__(self):
 
-        settings = Settings()
+        settings = RetrievalSettings()
         self.model_name = settings.EMBEDDING_MODEL  # Use the model name from settings
         """
         Initializes the Hugging Face inference client safely.
@@ -75,3 +75,11 @@ class EmbeddingService:
 
 
 
+
+
+from functools import lru_cache
+
+
+@lru_cache(maxsize=1)
+def get_embedding_service():
+    return EmbeddingService()

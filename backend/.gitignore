@@ -107,7 +107,7 @@ Thumbs.db
 secrets/
 *.pem
 *.key
-
+.pytest_cache/
 # =========================
 # DOCKER & DEPLOYMENT
 # =========================

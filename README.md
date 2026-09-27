@@ -2,6 +2,51 @@
 
 This project is a lightweight backend for document ingestion, retrieval, and answer generation using a local RAG-style workflow. It is designed to help a frontend app or local tool search through uploaded documents and provide grounded responses based on retrieved context.
 ## Live Preview:  https://generative-ai-powered-retrieval-system-for-technical-d.fastapicloud.dev
+
+## NVIDIA and Pinecone Assistant
+
+The provider dropdown defaults to Pinecone Assistant. The two providers have
+separate retrieval systems:
+
+- NVIDIA: PDF/TXT -> chunks -> the configured Pinecone index (`rag`). A
+  `text: semantic_text` index uses Pinecone integrated embedding through
+  `upsert_records` and text `search`. Dense `_values` indexes still use Hugging
+  Face embeddings and vector upsert/query. Retrieved chunks are reranked and
+  sent to NVIDIA. Thinking is off by default.
+- Pinecone Assistant: original files -> Assistant's managed library -> Assistant
+  chat. No external vector search or Hugging Face call is made for this path.
+
+The provider selector controls chat, upload, connection checks, and the document
+list. **Pinecone Assistant is the default**. Uploads go only to the selected
+provider. Switch to NVIDIA before uploading documents for its index. Assistant
+uploads return while processing continues; refresh until files are Available.
+The NVIDIA document list shows this session's uploads, while all existing index
+records remain searchable. Assistant refresh reads its remote file library.
+
+Assistant chat bypasses vector retrieval, Hugging Face, and external reranking.
+NVIDIA's integrated index bypasses Hugging Face calls. Dense-index requests
+reuse the Hugging Face client. Single-result searches skip reranking; multi-result
+searches retain reranking quality. Both providers stream responses, with NVIDIA
+thinking off by default. Actual response latency depends on the remote services.
+
+### Configuration
+
+Use `PINECONE_API_KEY` for the NVIDIA retrieval index and reranking, and
+`PINECONE_ASSISTANT_API_KEY` for Assistant. Keep the private settings in
+`backend/.env`. Assistant chat requires only Assistant settings; it does not
+require an index connection or NVIDIA credentials.
+
+### API
+
+- `POST /ingest/upload`: multipart `file`, optional `provider` (`nvidia`, `pinecone`); default `pinecone`.
+  Uploads write only to that provider; failures never switch providers.
+- `POST /chat/stream`: `{"query":"Summarize the document", "provider":"pinecone"}`.
+  NVIDIA accepts `top_k` and `enable_thinking`; Assistant manages retrieval itself.
+- `GET /providers/{provider}?check_connection=true`: index status for NVIDIA,
+  Assistant status and file processing state for Pinecone Assistant.
+
+Run offline tests with `python -m pytest`. Tests mock external services.
+
 ## Overview
 The backend includes:
 
@@ -39,8 +84,15 @@ This service is intended for local development or controlled internal use. It is
 ## Project Structure
 
 ```text
-.
+Domain_Specific_RAG_Pipeline_for_Generative_AI-Powered_Knowledge
+├── .gitignore
+├── pytest.ini
+├── README.md
 ├── backend/
+│   ├── .env                 # local only; ignored by Git
+│   ├── .gitignore
+│   ├── Dockerfile
+│   ├── requirements.txt
 │   ├── app/
 │   │   ├── __init__.py
 │   │   ├── main.py
@@ -52,7 +104,8 @@ This service is intended for local development or controlled internal use. It is
 │   │   │   └── routes/
 │   │   │       ├── __init__.py
 │   │   │       ├── chat.py
-│   │   │       └── ingest.py
+│   │   │       ├── ingest.py
+│   │   │       └── providers.py
 │   │   ├── core/
 │   │   │   └── config.py
 │   │   ├── ecu_prompts/
@@ -68,21 +121,17 @@ This service is intended for local development or controlled internal use. It is
 │   │   │   └── ingest.py
 │   │   ├── services/
 │   │   │   ├── __init__.py
+│   │   │   ├── assistant_service.py
 │   │   │   ├── llm_service.py
+│   │   │   ├── provider_service.py
 │   │   │   └── rag_service.py
 │   │   ├── ui/
-│   │   │   └── frontend.py
-│   │   └── utils/
-│   │       └── helpers.py
-│   ├── requirements.txt
-│   ├── .env
-│   └── .gitignore
+│   │   └── frontend.py
 ├── tests/
 │   ├── __init__.py
-│   └── test_api_routes.py
-├── Dockerfile
-├── README.md
-└── .gitignore
+│   ├── test_api_routes.py
+│   ├── test_index_schema.py
+│   └── test_providers.py
 ```
 
 ## Privacy and Security Requirements
@@ -268,3 +317,40 @@ pip install -r requirements.txt
 ---
 
 This project is a basic RAG backend template and should be used with careful attention to privacy, safe data handling, and local-only configuration.
+
+
+### Pinecone v10: missing index dimension
+
+The SDK now describes vector dimensions in `index.schema.fields`. A
+`semantic_text` index uses Pinecone integrated embeddings; the application
+automatically selects text upsert/search rather than Hugging Face vectors. The app inspects the schema explicitly and shows
+configuration errors in chat, uploads, and connection checks.
+
+For a Hugging Face vector index, select or create an index
+with one dense-vector field whose dimension matches your Hugging Face model
+and `PINECONE_DIMENSION`. Point `PINECONE_INDEX_NAME` at that index and upload
+original documents again. The NVIDIA retrieval path will use the selected index.
+Changing only the configured dimension does not change an existing index's
+schema. No remote index is created, modified, or deleted automatically.
+
+
+For the vector `upsert`/`query` interface used by this application, the dense
+field must be the reserved `_values` field. A custom named dense field belongs
+to the Documents API and is not supported by this pipeline. The configured
+shared index is shown by the UI connection check. Index validation happens
+before upload embedding requests, and malformed vector widths are rejected
+before upsert. When switching from a semantic-text index to a Hugging Face
+vector index, re-upload the original files; vectors from different embedding
+models are not interchangeable, even when their dimensions match.
+
+
+### NVIDIA response latency
+
+NVIDIA prompts request concise answers (normally 150 words, with detail when
+requested or necessary). `MODEL_MAX_TOKENS` in `backend/.env` caps generation;
+1024 is the configured response limit. Increase it for long answers. The UI
+reports when a response hits that limit. `MODEL_ENABLE_THINKING=false` keeps
+reasoning off unless explicitly enabled in the UI. NVIDIA logs distinguish
+first-token latency from total generation time. A shorter output limit does
+not force a short answer or remove upstream queueing delays. These settings
+do not affect Pinecone Assistant.

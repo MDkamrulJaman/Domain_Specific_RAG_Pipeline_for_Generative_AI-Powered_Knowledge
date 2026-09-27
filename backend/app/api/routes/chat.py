@@ -1,44 +1,36 @@
-import asyncio
 import logging
-from typing import AsyncGenerator
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.schemas.chat import ChatRequest
-from app.services.rag_service import RAGService
+from app.services.provider_service import get_chat_service
 
-# Setup logging
 logger = logging.getLogger(__name__)
-
 chat_router = APIRouter(prefix="/chat", tags=["Chat"])
-_rag_service = None
 
 
-def get_rag_service():
-    global _rag_service
-    if _rag_service is None:
-        _rag_service = RAGService()
-    return _rag_service
-
-
-@chat_router.post("/stream", summary="Streaming-compatible chat")
-async def stream_chat(req: ChatRequest):
-    """Return the answer through a streaming response for Gradio-style clients."""
+def response_stream(service, req):
     try:
-        answer = await asyncio.to_thread(
-            get_rag_service().ask, req.query, req.top_k
-        )
+        yield from service.stream(req.query, req.top_k, enable_thinking=req.enable_thinking)
+    except HTTPException as exc:
+        yield "\n\n" + str(exc.detail)
+    except Exception:
+        logger.exception("Chat stream failed for %s", req.provider)
+        yield "\n\n[Response interrupted. Check the provider configuration and try again.]"
+
+
+@chat_router.post("/stream", summary="Stream an answer from NVIDIA or Pinecone Assistant")
+def stream_chat(req: ChatRequest):
+    try:
+        service = get_chat_service(req.provider)
+    except HTTPException:
+        raise
     except Exception as exc:
-        logger.error("Error in /chat/stream endpoint: %s", exc, exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while processing your request.",
-        ) from exc
-
-    async def answer_stream() -> AsyncGenerator[str, None]:
-        yield answer
-
-    return StreamingResponse(answer_stream(), media_type="text/plain")
-
-
+        logger.exception("Chat provider initialization failed")
+        raise HTTPException(503, "The selected chat provider is unavailable.") from exc
+    return StreamingResponse(
+        response_stream(service, req),
+        media_type="text/plain",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

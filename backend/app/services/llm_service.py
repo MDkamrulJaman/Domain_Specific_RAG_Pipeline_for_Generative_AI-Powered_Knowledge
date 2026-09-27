@@ -1,108 +1,56 @@
 import logging
 import time
-from typing import Optional
-
 from openai import OpenAI
-
 from app.core.config import Settings
 
-# Setup logging
 logger = logging.getLogger(__name__)
 
 
 class LLMService:
-    """Service class for an OpenAI-compatible chat-completion endpoint."""
-
     def __init__(self):
-        settings = Settings()
+        self.settings = Settings()
+        self.client = OpenAI(
+            base_url=self.settings.MODEL_BASE_URL,
+            api_key=self.settings.MODEL_API_KEY,
+            timeout=self.settings.MODEL_TIMEOUT_SECONDS,
+        )
 
-        self.base_url = settings.MODEL_BASE_URL
-        self.model_name = settings.MODEL_NAME
-        self.timeout = settings.MODEL_TIMEOUT_SECONDS
-        self.api_key = settings.MODEL_API_KEY
-        self.temperature = settings.MODEL_TEMPERATURE
-        self.top_p = settings.MODEL_TOP_P
-        self.max_tokens = settings.MODEL_MAX_TOKENS
-
+    def stream(self, prompt: str, enable_thinking: bool | None = None):
+        if not prompt.strip():
+            return
+        start = time.perf_counter()
+        response = self.client.chat.completions.create(
+            model=self.settings.MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=self.settings.MODEL_TEMPERATURE,
+            top_p=self.settings.MODEL_TOP_P,
+            max_tokens=self.settings.MODEL_MAX_TOKENS,
+            extra_body={"chat_template_kwargs": {
+                "enable_thinking": (self.settings.MODEL_ENABLE_THINKING
+                    if enable_thinking is None else enable_thinking),
+            }},
+            stream=True,
+        )
+        first_token = None
+        finish_reason = None
         try:
-            self.client = OpenAI(
-                base_url=self.base_url,
-                api_key=self.api_key,
-                timeout=self.timeout,
-            )
-            logger.info(
-                "LLMService successfully initialized with OpenAI-compatible "
-                "provider targeting %s [%s]",
-                self.base_url,
-                self.model_name,
-            )
-        except Exception as e:
-            logger.critical("Failed to initialize OpenAI client: %s", str(e))
-            raise RuntimeError("Could not initialize LLMService client.") from e
-
-    def generate(self, prompt: str) -> Optional[str]:
-        """
-        Sends a prompt to the OpenAI-compatible endpoint and returns its text.
-        """
-        if not prompt or not prompt.strip():
-            logger.warning("Received an empty or invalid prompt.")
-            return None
-
-        try:
-            logger.debug("Invoking model '%s'", self.model_name)
-            start_time = time.perf_counter()
-
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
-                temperature= self.temperature,
-                top_p=self.top_p,
-                max_tokens=self.max_tokens,
-                extra_body={
-                    "chat_template_kwargs": {"enable_thinking": True},
-                    "reasoning_budget": 16384,
-                },
-                stream=True,
-            )
-
-            content_parts = []
-            reasoning_length = 0
             for chunk in response:
                 if not chunk.choices:
                     continue
+                choice = chunk.choices[0]
+                finish_reason = getattr(choice, "finish_reason", None) or finish_reason
+                if choice.delta.content:
+                    if first_token is None:
+                        first_token = time.perf_counter() - start
+                        logger.info("NVIDIA first response token in %.2f seconds", first_token)
+                    yield choice.delta.content
+            if finish_reason == "length":
+                yield "\n\n[Response reached its length limit. Ask a narrower follow-up, or increase MODEL_MAX_TOKENS for longer answers.]"
+        finally:
+            response.close()
+            logger.info("LLM request completed in %.2f seconds (first token: %s; finish: %s)",
+                        time.perf_counter() - start,
+                        f"{first_token:.2f}s" if first_token is not None else "none", finish_reason)
 
-                delta = chunk.choices[0].delta
-                reasoning = getattr(delta, "reasoning_content", None)
-                if reasoning:
-                    reasoning_length += len(reasoning)
-
-                if delta.content is not None:
-                    content_parts.append(delta.content)
-
-            if reasoning_length:
-                logger.debug("Received %d reasoning characters.", reasoning_length)
-
-            content = "".join(content_parts).strip()
-            elapsed_time = time.perf_counter() - start_time
-            logger.info(
-                "Model '%s' completed in %.2f seconds.",
-                self.model_name,
-                elapsed_time,
-            )
-            if not content:
-                logger.error("The model returned an empty response.")
-                return None
-
-            return content
-
-        except ConnectionError as ce:
-            logger.error(f"Failed to connect to Ollama server at {self.base_url}. Ensure Ollama is running. Error: {str(ce)}")
-            return None
-            
-        except Exception as e:
-            # Catch-all for timeouts, missing local models (e.g. if gemma3 needs to be pulled), or parsing glitches
-            logger.error(f"An error occurred during LLM text generation with {self.model_name}: {str(e)}")
-            return None
-        
-
-
+    def generate(self, prompt: str):
+        return "".join(self.stream(prompt)).strip() or None

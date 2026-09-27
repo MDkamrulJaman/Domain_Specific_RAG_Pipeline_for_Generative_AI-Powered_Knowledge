@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from app.api.routes.providers import providers_router
 
 from app.api.routes.chat import  chat_router
 from app.api.routes.ingest import ingest_router
@@ -6,6 +7,7 @@ from app.api.routes.ingest import ingest_router
 
 def build_backend_router(*extra_routers: APIRouter) -> APIRouter:
     router = APIRouter()
+    router.include_router(providers_router)
     router.include_router(chat_router)
     router.include_router(ingest_router)
 
