@@ -1,4 +1,5 @@
 from pathlib import Path
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,3 +37,14 @@ class AssistantSettings(EnvironmentSettings):
     PINECONE_ASSISTANT_NAME: str
     PINECONE_ASSISTANT_MODEL: str
     PINECONE_ASSISTANT_TIMEOUT_SECONDS: float
+
+
+class AppSettings(EnvironmentSettings):
+    """Operational limits independent of provider credentials."""
+    MAX_UPLOAD_MB: int = Field(default=20, ge=1, le=100)
+    UI_QUEUE_SIZE: int = Field(default=32, ge=1, le=1000)
+    UI_CONCURRENCY: int = Field(default=4, ge=1, le=32)
+
+    @property
+    def max_upload_bytes(self):
+        return self.MAX_UPLOAD_MB * 1024 * 1024

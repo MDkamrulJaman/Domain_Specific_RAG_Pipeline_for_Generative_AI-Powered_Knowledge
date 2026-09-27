@@ -1,6 +1,6 @@
 fastapi[standard]
 uvicorn[standard]
-gradio
+gradio>=6.26,<7
 python-multipart
 python-dotenv
 pydantic
@@ -10,6 +10,5 @@ pinecone>=10.0.0,<11
 huggingface-hub
 numpy
 langchain-core
-langchain-community
 langchain-text-splitters
 pypdf

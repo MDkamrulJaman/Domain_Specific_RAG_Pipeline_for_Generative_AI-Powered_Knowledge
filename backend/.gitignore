@@ -111,7 +111,6 @@ secrets/
 # =========================
 # DOCKER & DEPLOYMENT
 # =========================
-.dockerignore
 docker-compose.override.yml
 
 # =========================

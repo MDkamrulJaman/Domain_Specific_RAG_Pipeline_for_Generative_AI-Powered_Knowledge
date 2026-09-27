@@ -6,7 +6,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.api.routes import chat, ingest
+from app.api.routes import chat, ingest as ingest_routes
+from app.services import ingestion_service as ingest
 from app.core.config import AssistantSettings
 from app.schemas.chat import ChatRequest
 from app.services import assistant_service, provider_service
@@ -18,7 +19,7 @@ from app.services.rag_service import RAGService
 def client():
     app = FastAPI()
     app.include_router(chat.chat_router)
-    app.include_router(ingest.ingest_router)
+    app.include_router(ingest_routes.ingest_router)
     return TestClient(app)
 
 
@@ -151,8 +152,9 @@ def test_rag_stream_uses_retrieved_context():
 
 
 def test_gradio_selector_and_streaming_callback(monkeypatch):
-    from app.ui import frontend
-    demo = frontend.create_demo()
+    from app.ui import handlers as frontend
+    from app.ui.frontend import create_demo
+    demo = create_demo()
     dropdowns = [block for block in demo.blocks.values() if getattr(block, "label", None) == "Answer provider"]
     assert len(dropdowns) == 1
     assert dropdowns[0].value == "pinecone"
@@ -215,7 +217,7 @@ def test_assistant_refresh_checks_own_files(monkeypatch):
 
 
 def test_frontend_switch_selects_only_provider_library(monkeypatch):
-    from app.ui import frontend
+    from app.ui import handlers as frontend
     monkeypatch.setattr(frontend,"provider_configuration",lambda p:{"provider":p,"label":p,"configured":True,"model":"m","message":"Configured","enable_thinking":False})
     receipts={"shared":[{"name":"n.txt","results":{"nvidia":{"status":"Indexed"}}},{"name":"p.txt","results":{"pinecone":{"status":"Processing"}}}]}
     p=frontend.provider_panel("pinecone",receipts)
@@ -230,7 +232,7 @@ def test_frontend_switch_selects_only_provider_library(monkeypatch):
 
 def test_frontend_upload_tracks_shared_library(tmp_path, monkeypatch):
     import asyncio
-    from app.ui import frontend
+    from app.ui import handlers as frontend
     path = tmp_path / "manual.txt"
     path.write_text("sample content")
     calls = []
@@ -255,7 +257,7 @@ def test_upload_validation_and_cleanup(monkeypatch):
     from fastapi import UploadFile
     file = UploadFile(file=BytesIO(b"hello"), filename="unsafe.exe")
     with pytest.raises(HTTPException) as error:
-        asyncio.run(ingest.upload_file(file, provider="nvidia"))
+        asyncio.run(ingest_routes.upload_file(file, provider="nvidia"))
     assert error.value.status_code == 400
     assert file.file.closed
 
@@ -405,7 +407,7 @@ def test_api_upload_default_is_pinecone(client,monkeypatch):
 
 
 def test_refresh_removes_deleted_assistant_files_but_preserves_nvidia(monkeypatch):
-    from app.ui import frontend
+    from app.ui import handlers as frontend
     monkeypatch.setattr(frontend,"inspect_provider",lambda _: {"provider":"pinecone","label":"Assistant","configured":True,"connected":True,"model":"m","message":"Ready","files":[{"file_id":"new","name":"new.txt","status":"Available"}]})
     receipts={"shared":[{"name":"old.txt","results":{"pinecone":{"file_id":"old","status":"Available"},"nvidia":{"status":"Indexed"}}}]}
     _,updated,rows=frontend.refresh_provider("pinecone",receipts)

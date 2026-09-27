@@ -1,9 +1,7 @@
 import logging
 
-from dotenv import load_dotenv
 from fastapi import FastAPI
 
-load_dotenv()
 
 from app.api.app_router import backend_router
 from app.ui.frontend import create_demo, mount_demo

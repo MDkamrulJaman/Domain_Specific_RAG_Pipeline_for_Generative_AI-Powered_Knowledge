@@ -1,83 +1,34 @@
-import os
-import time
+from functools import lru_cache
 import logging
+import time
+
 import numpy as np
-from typing import List, Any
 from huggingface_hub import InferenceClient
 from app.core.config import RetrievalSettings
 
 logger = logging.getLogger(__name__)
 
+
 class EmbeddingService:
+    """One reusable HTTP client for externally embedded dense indexes."""
     def __init__(self):
-
         settings = RetrievalSettings()
-        self.model_name = settings.EMBEDDING_MODEL  # Use the model name from settings
-        """
-        Initializes the Hugging Face inference client safely.
-        """
-        try:
-            self.model_name = settings.EMBEDDING_MODEL
-            self.client = InferenceClient(
-                provider="hf-inference",
-                api_key=settings.HF_TOKEN,
-            )
-        except Exception as e:
-            # In production, you'd use a proper logger here
-            print(f"CRITICAL: Failed to initialize Hugging Face client: {e}")
-            self.client = None
+        self.model_name = settings.EMBEDDING_MODEL
+        self.client = InferenceClient(provider="hf-inference", api_key=settings.HF_TOKEN, timeout=30)
 
-    def _ensure_model_loaded(self):
-        """Internal helper to verify the model exists before encoding."""
-        if self.client is None:
-            raise RuntimeError(
-                "Hugging Face inference client is not initialized. Check your HF_TOKEN."
-            )
-
-    def embed_chunks(self, chunks: List[Any]) -> np.ndarray:
-        """
-        Extracts text from LangChain-style chunks and returns a float32 NumPy array of vectors.
-        """
-        self._ensure_model_loaded()
-        
-        # Extract page content from the chunk objects
-        texts = [c.page_content for c in chunks]
-        
-        if not texts:
+    def embed_chunks(self, chunks):
+        if not chunks:
             return np.empty((0, 0), dtype="float32")
+        start = time.perf_counter()
+        vectors = self.client.feature_extraction([chunk.page_content for chunk in chunks], model=self.model_name)
+        logger.info("Document embedding completed in %.3fs", time.perf_counter() - start)
+        return np.asarray(vectors, dtype="float32")
 
-        start_time = time.perf_counter()
-        embeddings = self.client.feature_extraction(
-            texts,
-            model=self.model_name,
-        )
-        logger.info(
-            f"Embedding API completed in {time.perf_counter() - start_time:.3f} seconds "
-            f"for {len(texts)} chunks"
-        )
-        return np.asarray(embeddings, dtype="float32")
-
-    def embed_query(self, query: str) -> np.ndarray:
-        """
-        Converts a single string query into a 2D float32 NumPy vector array.
-        """
-        self._ensure_model_loaded()
-        
-        start_time = time.perf_counter()
-        embedding = self.client.feature_extraction(
-            query,
-            model=self.model_name,
-        )
-        print(f"Query embedding API completed in {time.perf_counter() - start_time:.3f} seconds")
-        # Keeps the 2D array structure matching your original code: shape (1, dimensions)
-        return np.asarray([embedding], dtype="float32")
-    
-
-
-
-
-
-from functools import lru_cache
+    def embed_query(self, query):
+        start = time.perf_counter()
+        vector = self.client.feature_extraction(query, model=self.model_name)
+        logger.info("Query embedding completed in %.3fs", time.perf_counter() - start)
+        return np.asarray([vector], dtype="float32")
 
 
 @lru_cache(maxsize=1)

@@ -1,0 +1,9 @@
+.env
+.env.*
+.venv/
+__pycache__/
+*.pyc
+*.log
+.git/
+.pytest_cache/
+**/tempCodeRunnerFile.py

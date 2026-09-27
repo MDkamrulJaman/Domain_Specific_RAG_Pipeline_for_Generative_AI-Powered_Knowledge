@@ -1,0 +1,41 @@
+/* Scoped styles keep Gradio components and keyboard navigation intact. */
+:root { color-scheme: light; }
+:root.dark { color-scheme: dark; }
+.gradio-container { max-width: 1440px !important; margin: 0 auto !important; padding: 28px !important; }
+.hero { border: 1px solid #d9e3e8; border-radius: 24px; padding: 28px 36px 34px; background: radial-gradient(ellipse at 90% 0%, #b9f4e7 0%, transparent 50%), #f0f7f7; color: #102b35; margin-bottom: 16px; }
+.dark .hero { border-color: #26384a; background: radial-gradient(ellipse at 90% 0%, #163c42 0%, transparent 55%), #101b2d; color: #eef5fa; }
+.brand { font-size: 12px; font-weight: 750; letter-spacing: .18em; display: flex; align-items: center; gap: 12px; }
+.brand-symbol { width: 33px; height: 33px; display: grid; place-items: center; background: #5eead4; border-radius: 10px; color: #09322d; font-size: 23px; }
+.hero-content { display: flex; justify-content: space-between; align-items: center; gap: 32px; margin-top: 28px; }
+.eyebrow { font-size: 10px; letter-spacing: .17em; font-weight: 700; margin-bottom: 12px; color: #367b77; }
+.dark .eyebrow { color: #83cfc3; }
+.hero h1 { font-size: clamp(30px, 3.5vw, 48px); font-weight: 650; line-height: 1.12; letter-spacing: -.045em; margin: 0; }
+.hero h1 span { color: #087f73; }
+.dark .hero h1 span { color: #5eead4; }
+.hero-description { font-size: 14px; line-height: 1.7; color: #46606e; margin-top: 16px; }
+.dark .hero-description { color: #a0b4c7; }
+.hero-aside { display: flex; flex-direction: column; gap: 22px; padding: 15px 35px; border-left: 1px solid #72a89b55; }
+.step { display: flex; align-items: center; gap: 18px; font-size: 11px; color: #087f73; letter-spacing: .06em; }
+.step b { color: #294251; font-size: 13px; font-weight: 500; letter-spacing: 0; }
+.dark .step { color: #5eead4; }
+.dark .step b { color: #c7d6e5; }
+#toolbar { align-items: center; padding: 6px 4px 18px; }
+#breadcrumb { font-size: 11px; letter-spacing: .08em; color: #7c94a7; }
+#workspace-sidebar, #conversation-panel { border: 1px solid var(--border-color-primary); border-radius: 20px; padding: 22px; background: var(--block-background-fill); gap: 16px; }
+#workspace-sidebar h3, #conversation-panel h3 { font-size: 18px; letter-spacing: -.02em; }
+#workspace-sidebar { max-width: 390px; }
+#provider-status { padding: 14px; border-radius: 12px; background: var(--background-fill-secondary); font-size: 12px; overflow-wrap: anywhere; }
+#document-upload { border-style: dashed; border-radius: 14px; }
+#document-library { font-size: 12px; }
+#knowledge-chat { border-radius: 16px; }
+#response-status { padding: 10px 14px; border-radius: 10px; border-left: 3px solid #2dd4bf; background: var(--background-fill-secondary); font-size: 12px; }
+.chat-welcome { text-align: center; padding: 38px 15px; }
+.welcome-icon { font-size: 40px; color: #2dd4bf; margin-bottom: 16px; }
+.chat-welcome h2 { font-size: 24px; letter-spacing: -.03em; }
+.chat-welcome p { font-size: 14px; line-height: 1.7; opacity: .7; }
+.prompt-hints { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 24px; }
+.prompt-hints span { padding: 8px 12px; border: 1px solid var(--border-color-primary); border-radius: 9px; font-size: 11px; }
+.gradio-container button { transition: background-color .15s ease, border-color .15s ease; }
+.gradio-container :focus-visible { outline: 2px solid #14b8a6 !important; outline-offset: 3px; }
+@media (max-width: 800px) { .gradio-container { padding: 12px !important; } .hero { padding: 24px; } .hero-aside { display: none; } #workspace-sidebar { max-width: none; } #workspace-sidebar, #conversation-panel { padding: 16px; } }
+@media (prefers-reduced-motion: reduce) { .gradio-container * { transition: none !important; animation: none !important; } }

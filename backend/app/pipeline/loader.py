@@ -4,10 +4,8 @@ from pathlib import Path
 import logging
 from typing import List, Any
 
-from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.documents import Document
 
-# Professional logging setup
 logger = logging.getLogger(__name__)
 
 
@@ -52,18 +50,7 @@ class UniversalDocumentLoader:
     def load_file(self, file_path: str | Path) -> List[Any]:
         """Load one supported file so an upload cannot re-index older files."""
         file = Path(file_path)
-        suffix = file.suffix.lower()
-
-        if suffix == ".pdf":
-            return PyPDFLoader(str(file)).load()
-        if suffix == ".txt":
-            return [
-                Document(
-                    page_content=file.read_text(encoding="utf-8", errors="replace"),
-                    metadata={"source": str(file)},
-                )
-            ]
-        raise ValueError(f"Unsupported file type: {suffix}")
+        return self.load_bytes(str(file), file.read_bytes())
 
     def load_bytes(self, filename: str, file_bytes: bytes) -> List[Any]:
         """Load a file directly from bytes without saving it to disk."""

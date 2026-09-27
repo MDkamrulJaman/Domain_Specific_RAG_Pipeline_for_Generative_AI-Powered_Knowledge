@@ -103,7 +103,7 @@ def test_invalid_vectors_never_reach_pinecone(values):
 
 def test_incompatible_storage_fails_before_embedding(monkeypatch):
     from unittest.mock import Mock
-    from app.api.routes import ingest
+    from app.services import ingestion_service as ingest
     embedding = Mock()
     monkeypatch.setattr(ingest, "EmbeddingService", embedding)
     def fail():
