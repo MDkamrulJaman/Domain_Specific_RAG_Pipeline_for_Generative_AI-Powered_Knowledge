@@ -9,10 +9,10 @@ switch. Pinecone Assistant is selected by default.
 The selected provider controls **upload, chat, library, and connection checks**.
 An upload never silently switches providers or writes to both destinations.
 
-| Provider | Documents | Retrieval | Generation |
-| --- | --- | --- | --- |
-| Pinecone Assistant | Assistant file library | Managed by Assistant | Assistant chat |
-| NVIDIA | Configured Pinecone index (currently `rag`) | Integrated text search + reranking, or HF vectors for dense indexes | NVIDIA streaming API |
+| Provider           | Documents                                    | Retrieval                                                           | Generation           |
+| ------------------ | -------------------------------------------- | ------------------------------------------------------------------- | -------------------- |
+| Pinecone Assistant | Assistant file library                       | Managed by Assistant                                                | Assistant chat       |
+| NVIDIA             | Configured Pinecone index (currently`rag`) | Integrated text search + reranking, or HF vectors for dense indexes | NVIDIA streaming API |
 
 Assistant files must finish processing before chat. Refresh the file library
 until their status is Available. NVIDIA's list shows session uploads; existing
@@ -127,3 +127,5 @@ python -m pytest -q
 Tests mock remote providers and build UI components without starting a server.
 
 See [the test suite guide](tests/README.md) for the feature-by-feature test map and focused test commands.
+
+See [Architecture and SOLID principles](ARCHITECTURE.md) for dependency boundaries, provider extension, and design tradeoffs.

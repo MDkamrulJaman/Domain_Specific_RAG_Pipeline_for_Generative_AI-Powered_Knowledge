@@ -7,9 +7,9 @@ from app.core.config import AssistantSettings
 
 class AssistantService:
     """Assistant uses its own uploaded file library, independently of rag."""
-    def __init__(self):
-        settings = AssistantSettings()
-        self.client = Pinecone(api_key=settings.PINECONE_ASSISTANT_API_KEY)
+    def __init__(self, settings=None, client=None):
+        settings = settings if settings is not None else AssistantSettings()
+        self.client = client if client is not None else Pinecone(api_key=settings.PINECONE_ASSISTANT_API_KEY)
         self.name = settings.PINECONE_ASSISTANT_NAME
         self.model = settings.PINECONE_ASSISTANT_MODEL
         self.timeout = settings.PINECONE_ASSISTANT_TIMEOUT_SECONDS

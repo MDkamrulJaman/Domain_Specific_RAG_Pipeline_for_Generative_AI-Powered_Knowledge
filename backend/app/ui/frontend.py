@@ -42,6 +42,10 @@ def create_demo():
                     fn=rag_answer, chatbot=chatbot,
                     additional_inputs=[provider, top_k, thinking],
                     additional_outputs=[response_status],
+                    # Message-only examples retain the current provider and controls.
+                    examples=[["Summarize the key points"], ["Explain a technical concept"],
+                              ["Find a specific requirement"]],
+                    run_examples_on_click=True, cache_examples=False,
                     submit_btn="Send", stop_btn="Stop", analytics_enabled=False,
                     concurrency_limit=limits.UI_CONCURRENCY,
                 )

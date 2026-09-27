@@ -20,7 +20,7 @@ class RetrievalSettings(EnvironmentSettings):
     PINECONE_MODEL: str
 
 
-class Settings(RetrievalSettings):
+class NvidiaSettings(EnvironmentSettings):
     MODEL_BASE_URL: str
     MODEL_NAME: str
     MODEL_API_KEY: str
@@ -29,6 +29,10 @@ class Settings(RetrievalSettings):
     MODEL_TOP_P: float
     MODEL_MAX_TOKENS: int
     MODEL_ENABLE_THINKING: bool = False
+
+
+class Settings(RetrievalSettings, NvidiaSettings):
+    """Compatibility settings for applications loading both NVIDIA components."""
 
 
 class AssistantSettings(EnvironmentSettings):

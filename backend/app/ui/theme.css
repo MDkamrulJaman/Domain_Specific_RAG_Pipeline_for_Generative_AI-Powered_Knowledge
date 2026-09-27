@@ -33,8 +33,6 @@
 .welcome-icon { font-size: 40px; color: #2dd4bf; margin-bottom: 16px; }
 .chat-welcome h2 { font-size: 24px; letter-spacing: -.03em; }
 .chat-welcome p { font-size: 14px; line-height: 1.7; opacity: .7; }
-.prompt-hints { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 24px; }
-.prompt-hints span { padding: 8px 12px; border: 1px solid var(--border-color-primary); border-radius: 9px; font-size: 11px; }
 .gradio-container button { transition: background-color .15s ease, border-color .15s ease; }
 .gradio-container :focus-visible { outline: 2px solid #14b8a6 !important; outline-offset: 3px; }
 @media (max-width: 800px) { .gradio-container { padding: 12px !important; } .hero { padding: 24px; } .hero-aside { display: none; } #workspace-sidebar { max-width: none; } #workspace-sidebar, #conversation-panel { padding: 16px; } }

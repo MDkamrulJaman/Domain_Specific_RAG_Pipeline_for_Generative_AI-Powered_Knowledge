@@ -1,7 +1,14 @@
+"""Composition root: wire concrete adapters and expose provider use cases.
+
+SDK construction belongs here or in adapters, never inside RAG/indexing workflows.
+"""
+import logging
 from functools import lru_cache
 from fastapi import HTTPException
-
+from pydantic import ValidationError
 from app.schemas.chat import Provider
+from app.services.contracts import ChatService
+from app.services.provider_registry import ProviderDefinition, ProviderRegistry
 
 
 @lru_cache(maxsize=1)
@@ -10,45 +17,89 @@ def get_vectorstore():
     return VectorStore()
 
 
-@lru_cache(maxsize=2)
-def get_chat_service(provider: Provider = "pinecone"):
-    if provider not in ("nvidia", "pinecone"):
-        raise ValueError("Unsupported chat provider.")
-    if provider == "pinecone":
-        from app.services.assistant_service import AssistantService
-        return AssistantService()
+def _nvidia_chat():
+    from app.services.llm_service import LLMService
     from app.services.rag_service import RAGService
-    return RAGService(provider=provider, vectorstore=get_vectorstore())
+    return RAGService(vectorstore=get_vectorstore(), llm=LLMService())
 
 
-PROVIDER_LABELS = {"nvidia": "NVIDIA model", "pinecone": "Pinecone Assistant"}
+def _assistant_chat():
+    from app.services.assistant_service import AssistantService
+    return AssistantService()
+
+
+def _nvidia_upload(filename, content, progress):
+    from app.services.ingestion_service import upload_to_nvidia
+    return upload_to_nvidia(filename, content, progress)
+
+
+def _assistant_upload(filename, content, progress):
+    from app.services.ingestion_service import upload_to_assistant
+    return upload_to_assistant(filename, content, progress)
+
+
+def _nvidia_configuration():
+    from app.core.config import Settings
+    settings = Settings()
+    fields = ("PINECONE_API_KEY", "PINECONE_INDEX_NAME", "PINECONE_MODEL", "HF_TOKEN",
+              "EMBEDDING_MODEL", "MODEL_BASE_URL", "MODEL_NAME", "MODEL_API_KEY")
+    return settings, fields, settings.MODEL_NAME, settings.MODEL_ENABLE_THINKING
+
+
+def _assistant_configuration():
+    from app.core.config import AssistantSettings
+    settings = AssistantSettings()
+    fields = ("PINECONE_ASSISTANT_API_KEY", "PINECONE_ASSISTANT_NAME", "PINECONE_ASSISTANT_MODEL")
+    return settings, fields, settings.PINECONE_ASSISTANT_MODEL, False
+
+
+def _assistant_status(service):
+    state = service.inspect_status()
+    files = service.list_files()
+    available = sum(file["status"].lower() == "available" for file in files)
+    message = f"Assistant: {state}. {available}/{len(files)} files available. "
+    if not available:
+        message += "Upload files and wait for processing before chatting."
+    return {"connected": True, "assistant_status": state, "files": files, "message": message}
+
+
+def _nvidia_status(service):
+    store = service.vectorstore
+    namespace = store.index.describe_index_stats().namespaces.get(store.namespace)
+    count = namespace.vector_count if namespace else 0
+    mode = "Pinecone integrated embeddings" if store.integrated_embedding else "Hugging Face embeddings"
+    return {"connected": True, "vector_count": count,
+            "message": f"Pinecone index '{store.index_name}' connected: {count} records. "
+                       f"Retrieval uses {mode}; NVIDIA generates answers."}
+
+
+registry = ProviderRegistry({
+    "pinecone": ProviderDefinition("Pinecone Assistant", _assistant_chat, _assistant_upload,
+                                   _assistant_configuration, _assistant_status),
+    "nvidia": ProviderDefinition("NVIDIA model", _nvidia_chat, _nvidia_upload,
+                                 _nvidia_configuration, _nvidia_status),
+})
+PROVIDER_LABELS = registry.labels
+
+
+@lru_cache(maxsize=2)
+def get_chat_service(provider: Provider = "pinecone") -> ChatService:
+    return registry.resolve(provider).chat_factory()
 
 
 def provider_configuration(provider: Provider):
-    """Public configuration summary. Never return credentials or validation inputs."""
-    from pydantic import ValidationError
-    from app.core.config import Settings, AssistantSettings, RetrievalSettings
-    if provider not in PROVIDER_LABELS:
-        raise ValueError("Unsupported chat provider.")
-    result = {
-        "provider": provider, "label": PROVIDER_LABELS[provider],
-        "configured": False, "model": "", "enable_thinking": False,
-    }
+    """Return a credential-free summary without opening remote connections."""
+    definition = registry.resolve(provider)
+    result = {"provider": provider, "label": definition.label, "configured": False,
+              "model": "", "enable_thinking": False}
     try:
-        retrieval = RetrievalSettings() if provider == "nvidia" else None
-        settings = AssistantSettings() if provider == "pinecone" else Settings()
+        settings, fields, model, thinking = definition.configuration()
     except ValidationError as exc:
         missing = sorted({str(error["loc"][0]) for error in exc.errors()})
         result["message"] = "Setup required. Check these backend environment settings: " + ", ".join(missing)
         return result
-    shared_fields = ["PINECONE_API_KEY", "PINECONE_INDEX_NAME", "PINECONE_MODEL", "HF_TOKEN", "EMBEDDING_MODEL"]
-    fields = (["PINECONE_ASSISTANT_API_KEY", "PINECONE_ASSISTANT_NAME", "PINECONE_ASSISTANT_MODEL"]
-              if provider == "pinecone" else ["MODEL_BASE_URL", "MODEL_NAME", "MODEL_API_KEY"])
-    missing = [name for name in shared_fields if not str(getattr(retrieval, name)).strip()] if retrieval else []
-    missing += [name for name in fields if not str(getattr(settings, name)).strip()]
-    result["model"] = settings.PINECONE_ASSISTANT_MODEL if provider == "pinecone" else settings.MODEL_NAME
-    result["enable_thinking"] = False if provider == "pinecone" else settings.MODEL_ENABLE_THINKING
-    result["configured"] = not missing
+    missing = [name for name in fields if not str(getattr(settings, name)).strip()]
+    result.update(model=model, enable_thinking=thinking, configured=not missing)
     result["message"] = (
         "Setup required. Set " + ", ".join(missing) + " in the backend environment, then restart the app."
         if missing else "Configuration loaded. Connection has not been checked."
@@ -57,38 +108,16 @@ def provider_configuration(provider: Provider):
 
 
 def inspect_provider(provider: Provider):
-    """Read remote readiness on demand without generating a model response."""
-    import logging
     result = provider_configuration(provider)
     result.update(connected=False, files=[])
     if not result["configured"]:
         return result
     try:
-        service = get_chat_service(provider)
-        if provider == "pinecone":
-            state = service.inspect_status()
-            files = service.list_files()
-            available = sum(file["status"].lower() == "available" for file in files)
-            result.update(connected=True, assistant_status=state, files=files)
-            result["message"] = f"Assistant: {state}. {available}/{len(files)} files available. "
-            if not available:
-                result["message"] += "Upload files and wait for processing before chatting."
-        else:
-            stats = service.vectorstore.index.describe_index_stats()
-            namespace = stats.namespaces.get(service.vectorstore.namespace)
-            count = namespace.vector_count if namespace else 0
-            result.update(connected=True, vector_count=count)
-            result["message"] = f"Pinecone index '{service.vectorstore.index_name}' connected: {count} records. "
-            mode = "Pinecone integrated embeddings" if service.vectorstore.integrated_embedding else "Hugging Face embeddings"
-            result["message"] += f"Retrieval uses {mode}; NVIDIA generates answers."
+        result.update(registry.resolve(provider).inspect(get_chat_service(provider)))
     except HTTPException as exc:
-        result["connected"] = False
-        result["message"] = str(exc.detail)
+        result.update(connected=False, message=str(exc.detail))
     except Exception:
-        result["connected"] = False
         logging.getLogger(__name__).exception("Provider readiness check failed for %s", provider)
-        result["message"] = (
-            "Connection check failed. Check the provider credentials, assistant or index name, "
-            "and network connection. See server logs for details."
-        )
+        result.update(connected=False, message="Connection check failed. Check provider credentials "
+                      "and network access. See server logs for details.")
     return result

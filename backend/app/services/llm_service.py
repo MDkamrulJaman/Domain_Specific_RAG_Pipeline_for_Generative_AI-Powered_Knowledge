@@ -1,15 +1,15 @@
 import logging
 import time
 from openai import OpenAI
-from app.core.config import Settings
+from app.core.config import NvidiaSettings
 
 logger = logging.getLogger(__name__)
 
 
 class LLMService:
-    def __init__(self):
-        self.settings = Settings()
-        self.client = OpenAI(
+    def __init__(self, settings=None, client=None):
+        self.settings = settings if settings is not None else NvidiaSettings()
+        self.client = client if client is not None else OpenAI(
             base_url=self.settings.MODEL_BASE_URL,
             api_key=self.settings.MODEL_API_KEY,
             timeout=self.settings.MODEL_TIMEOUT_SECONDS,

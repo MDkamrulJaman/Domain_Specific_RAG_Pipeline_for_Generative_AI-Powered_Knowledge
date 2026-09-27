@@ -1,11 +1,11 @@
-from collections.abc import Mapping
 import logging
 import hashlib
 import time
 import numpy as np
 from fastapi import HTTPException, status
 from pinecone import Pinecone
-from pinecone.models.indexes.schema import DenseVectorField, SemanticTextField, SparseVectorField
+from pinecone.models.indexes.schema import SemanticTextField
+from app.pipeline.index_schema import _read_field, validate_index_dimension
 
 from app.core.config import RetrievalSettings
 from app.pipeline.embedder import get_embedding_service as EmbeddingService
@@ -13,64 +13,13 @@ from app.pipeline.embedder import get_embedding_service as EmbeddingService
 logger = logging.getLogger(__name__)
 
 
-def _read_field(value, name, default=None):
-    return value.get(name, default) if isinstance(value, Mapping) else getattr(value, name, default)
-
-
-def validate_index_dimension(index_info, index_name: str, expected: int):
-    """Read v10 schema fields without triggering deprecated IndexModel accessors."""
-    schema = _read_field(index_info, "schema")
-    if schema is not None:
-        fields = _read_field(schema, "fields", {}) or {}
-        dense = []
-        kinds = []
-        for name, field in fields.items():
-            if isinstance(field, DenseVectorField):
-                kind = "dense_vector"
-            elif isinstance(field, SemanticTextField):
-                kind = "semantic_text"
-            elif isinstance(field, SparseVectorField):
-                kind = "sparse_vector"
-            else:
-                kind = _read_field(field, "type", type(field).__name__)
-            kinds.append(f"{name}: {kind}")
-            if kind == "dense_vector":
-                dense.append((name, _read_field(field, "dimension")))
-        if len(dense) != 1:
-            problem = "no dense-vector field" if not dense else "multiple dense-vector fields"
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    f"Pinecone index '{index_name}' has {problem} "
-                    f"(schema: {', '.join(kinds) or 'empty'}). "
-                    f"This shared Hugging Face pipeline requires an index with one dense-vector field "
-                    f"of dimension {expected}. Select or create a compatible index and set "
-                    "PINECONE_INDEX_NAME to its name, then upload your documents there. "
-                    "A semantic_text field uses Pinecone-managed embeddings and cannot replace "
-                    "the Hugging Face vector field. Your existing index has not been modified."
-                ),
-            )
-        dimension = dense[0][1]
-    else:
-        # Compatibility with older API responses that actually contain a top-level dimension.
-        dimension = _read_field(index_info, "dimension")
-    if dimension != expected:
-        actual = dimension if dimension is not None else "unknown"
-        raise HTTPException(
-            status_code=503,
-            detail=(f"Pinecone index '{index_name}' has dimension {actual}; "
-                    f"PINECONE_DIMENSION is {expected}. Use a dense index whose dimension "
-                    "matches your Hugging Face embedding model, then re-upload documents if changing indexes."),
-        )
-    return dimension
-
-
 class VectorStore:
-    def __init__(self):
-        settings = RetrievalSettings()
+    def __init__(self, settings=None, client=None, embedder_factory=None):
+        settings = settings if settings is not None else RetrievalSettings()
+        self.embedder_factory = embedder_factory if embedder_factory is not None else EmbeddingService
         self.namespace = settings.PINECONE_NAMESPACE
         self.rerank_model = settings.PINECONE_MODEL
-        self.client = Pinecone(api_key=settings.PINECONE_API_KEY)
+        self.client = client if client is not None else Pinecone(api_key=settings.PINECONE_API_KEY)
         self.index_name = settings.PINECONE_INDEX_NAME
         index_info = self.client.describe_index(self.index_name)
         fields = _read_field(_read_field(index_info, "schema"), "fields", {}) or {}
@@ -157,7 +106,7 @@ class VectorStore:
                 documents = [_read_field(hit, "fields", {}).get("text", "") for hit in hits
                              if _read_field(hit, "fields", {}).get("text")]
             else:
-                query_vector = EmbeddingService().embed_query(query)[0].tolist()
+                query_vector = getattr(self, "embedder_factory", EmbeddingService)().embed_query(query)[0].tolist()
                 response = self.index.query(
                     vector=query_vector,
                     top_k=max(top_k * 2, top_k),

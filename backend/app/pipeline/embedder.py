@@ -11,10 +11,10 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingService:
     """One reusable HTTP client for externally embedded dense indexes."""
-    def __init__(self):
-        settings = RetrievalSettings()
+    def __init__(self, settings=None, client=None):
+        settings = settings if settings is not None else RetrievalSettings()
         self.model_name = settings.EMBEDDING_MODEL
-        self.client = InferenceClient(provider="hf-inference", api_key=settings.HF_TOKEN, timeout=30)
+        self.client = client if client is not None else InferenceClient(provider="hf-inference", api_key=settings.HF_TOKEN, timeout=30)
 
     def embed_chunks(self, chunks):
         if not chunks:

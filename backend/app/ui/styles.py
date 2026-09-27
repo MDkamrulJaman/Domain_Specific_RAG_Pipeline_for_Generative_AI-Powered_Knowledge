@@ -21,7 +21,7 @@ HEADER = """
 EMPTY_CHAT = """
 <div class="chat-welcome"><div class="welcome-icon" aria-hidden="true">✧</div>
 <h2>Your next insight starts here.</h2><p>Upload a document to the selected provider,<br>then ask a question in your own words.</p>
-<div class="prompt-hints"><span>Summarize the key points</span><span>Explain a technical concept</span><span>Find a specific requirement</span></div></div>
+</div>
 """
 
 

@@ -76,3 +76,21 @@ def test_theme_and_mount_apply_dark_mode_and_upload_limit(monkeypatch):
     assert "classList.add('dark')" in options["head"]
     assert options["max_file_size"] == 20 * 1024 * 1024
     assert options["show_error"] is False
+
+
+def test_suggestions_submit_using_live_provider_controls():
+    from app.ui.frontend import create_demo
+    from app.ui.handlers import rag_answer
+    demo = create_demo()
+    chatbot = next(block for block in demo.blocks.values() if getattr(block, "elem_id", None) == "knowledge-chat")
+    assert [example["text"] for example in chatbot.examples] == [
+        "Summarize the key points", "Explain a technical concept", "Find a specific requirement",
+    ]
+    selection = next(fn for fn in demo.fns.values() if (chatbot._id, "example_select") in fn.targets)
+    interface = selection.fn.__self__
+    assert interface.run_examples_on_click is True
+    assert interface.cache_examples is False
+    assert interface.fn is rag_answer
+    assert interface._additional_inputs_in_examples is False
+    assert interface.additional_inputs[0].label == "Answer provider"
+    assert interface.additional_inputs[0].value == "pinecone"

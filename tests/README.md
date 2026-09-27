@@ -17,6 +17,7 @@ client and disables Gradio analytics.
 | `test_vector_retrieval.py` | Hugging Face vectors and Pinecone integrated text search |
 | `test_index_schema.py` | Supported schemas, vector dimensions, SDK compatibility |
 | `test_frontend.py` | Provider selection, uploads, library refresh, dark theme |
+| `test_service_architecture.py` | Dependency injection, substitutable adapters, registry extension, app factory |
 | `test_document_loader.py` | Parsing consistency between disk and in-memory files |
 
 ## Running tests
