@@ -213,12 +213,12 @@ Switching providers changes the destination for subsequent operations. Questions
 
 Select a skill under NVIDIA options or send its value in the API request.
 
-| API value        | Purpose                                                     | Maximum output tokens | Passage character budget         |
-| ---------------- | ----------------------------------------------------------- | --------------------- | -------------------------------- |
-| `general`      | General grounded answer                                     | `MODEL_MAX_TOKENS`  | 16,000 |
-| `summarize`    | Up to five concise summary bullets                          | 512                   | 12,000                           |
-| `explain`      | Plain-language explanation and a supported example          | 768                   | 16,000                           |
-| `requirements` | Relevant requirements with wording and conditions preserved | 1,024                 | 20,000                           |
+| API value        | Purpose                                                     | Maximum output tokens | Passage character budget |
+| ---------------- | ----------------------------------------------------------- | --------------------- | ------------------------ |
+| `general`      | General grounded answer                                     | `MODEL_MAX_TOKENS`  | 16,000                   |
+| `summarize`    | Up to five concise summary bullets                          | 512                   | 12,000                   |
+| `explain`      | Plain-language explanation and a supported example          | 768                   | 16,000                   |
+| `requirements` | Relevant requirements with wording and conditions preserved | 1,024                 | 20,000                   |
 
 The configured `MODEL_MAX_TOKENS` remains an upper bound for every skill. Context budgets apply to passage text, not the entire prompt or its token count. Oversized passages are skipped rather than partially quoted. Skills preserve request-specific settings without changing cached clients. Pinecone Assistant ignores this NVIDIA-only option.
 
