@@ -45,9 +45,9 @@ class AssistantSettings(EnvironmentSettings):
 
 class AppSettings(EnvironmentSettings):
     """Operational limits independent of provider credentials."""
-    MAX_UPLOAD_MB: int = Field(default=20, ge=1, le=100)
-    UI_QUEUE_SIZE: int = Field(default=32, ge=1, le=1000)
-    UI_CONCURRENCY: int = Field(default=4, ge=1, le=32)
+    MAX_UPLOAD_MB: int = Field(default=5, ge=1, le=100)
+    UI_QUEUE_SIZE: int = Field(default=8, ge=1, le=1000)
+    UI_CONCURRENCY: int = Field(default=1, ge=1, le=32)
 
     @property
     def max_upload_bytes(self):

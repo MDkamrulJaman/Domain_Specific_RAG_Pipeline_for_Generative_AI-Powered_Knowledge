@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.schemas.chat import ChatRequest
+from app.services.chat_command import AnswerCommand
 from app.services.provider_service import get_chat_service
 
 logger = logging.getLogger(__name__)
@@ -12,7 +13,8 @@ chat_router = APIRouter(prefix="/chat", tags=["Chat"])
 
 def response_stream(service, req):
     try:
-        yield from service.stream(req.query, req.top_k, enable_thinking=req.enable_thinking)
+        # Command invoker: HTTP error formatting stays at the transport boundary.
+        yield from AnswerCommand.from_request(req).execute(service)
     except HTTPException as exc:
         yield "\n\n" + str(exc.detail)
     except Exception:

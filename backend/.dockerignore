@@ -5,5 +5,8 @@ __pycache__/
 *.pyc
 *.log
 .git/
+.fastapicloud/
+**/.env
+**/.env.*
 .pytest_cache/
 **/tempCodeRunnerFile.py

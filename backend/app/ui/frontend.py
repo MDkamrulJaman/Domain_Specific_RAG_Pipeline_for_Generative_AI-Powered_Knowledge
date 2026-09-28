@@ -1,6 +1,7 @@
 """Gradio layout and event wiring. Request logic lives in handlers.py."""
 import gradio as gr
 from app.core.config import AppSettings
+from app.services.skills import SKILLS
 from app.services.provider_service import provider_configuration
 from app.ui.handlers import status_markdown, provider_panel, refresh_provider, rag_answer, ingest_file
 from app.ui.styles import CSS, HEADER, EMPTY_CHAT, INITIAL_THEME, TOGGLE_THEME, DARK_HEAD, build_theme
@@ -25,8 +26,17 @@ def create_demo():
                 )
                 connection_status = gr.Markdown(status_markdown(default), elem_id="provider-status")
                 refresh = gr.Button("Refresh connection & files")
-                top_k = gr.Slider(1, 20, value=5, step=1, label="NVIDIA retrieved chunks", visible=False, info="Controls NVIDIA retrieval. Assistant manages its own retrieval.")
+                top_k = gr.Dropdown(
+                    choices=[("Automatic (based on skill)", "auto")] + [(str(n), str(n)) for n in range(1, 21)],
+                    value="auto", label="NVIDIA retrieval depth", visible=False,
+                    info="Automatic: General 5, Explain 4, Summarize/Requirements 8 passages. Manual values override this. Assistant manages its own retrieval.",
+                )
                 with gr.Group(visible=False) as nvidia_options:
+                    skill = gr.Dropdown(
+                        choices=[(policy.label, name) for name, policy in SKILLS.items()],
+                        value="general", label="NVIDIA skill",
+                        info="Applies to your next question. Summaries cover retrieved passages only. Use General answer for longer responses.",
+                    )
                     thinking = gr.Checkbox(value=default["enable_thinking"], label="Enable NVIDIA thinking", info="Off for faster answers. On for additional reasoning.")
                 gr.Markdown("### Document library")
                 library_note = gr.Markdown("Files upload to Pinecone Assistant. Refresh to check when processing is complete.")
@@ -40,7 +50,7 @@ def create_demo():
                 response_status = gr.Markdown("Pinecone Assistant - Ready" if default["configured"] else "Pinecone Assistant - Setup required", elem_id="response-status")
                 chat_interface = gr.ChatInterface(
                     fn=rag_answer, chatbot=chatbot,
-                    additional_inputs=[provider, top_k, thinking],
+                    additional_inputs=[provider, top_k, thinking, skill],
                     additional_outputs=[response_status],
                     # Message-only examples retain the current provider and controls.
                     examples=[["Summarize the key points"], ["Explain a technical concept"],
@@ -51,6 +61,7 @@ def create_demo():
                 )
                 gr.Markdown("NVIDIA retrieves from the Pinecone index; Assistant retrieves from its own uploaded files. Each question is independent.")
                 gr.HTML('<a href="/docs" target="_blank">API documentation</a> · <a href="/health" target="_blank">System health</a>')
+        # Event wiring coordinates views; Gradio supplies event dispatch.
         provider.change(
             provider_panel, inputs=[provider, receipts],
             outputs=[connection_status, nvidia_options, thinking, upload_button, library, library_note, upload_status, response_status, top_k],

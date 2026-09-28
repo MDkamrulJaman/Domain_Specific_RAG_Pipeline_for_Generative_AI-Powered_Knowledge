@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from app.services.ingestion_service import process_document
 from app.core.config import AppSettings
 from app.schemas.chat import ChatRequest
+from app.services.chat_command import AnswerCommand
 from pydantic import ValidationError
 from app.services.provider_service import (
     PROVIDER_LABELS, get_chat_service, inspect_provider, provider_configuration,
@@ -60,6 +61,8 @@ def provider_panel(provider, receipts):
 
 def refresh_provider(provider, receipts):
     config = inspect_provider(provider)
+    # Copy-on-write session data prevents accidental mutation of the caller.
+    # This is not an undo history (Memento) or a Prototype object factory.
     updated = copy.deepcopy(receipts or {})
     if provider == "pinecone" and config.get("connected"):
         entries = updated.setdefault("shared", [])
@@ -71,15 +74,15 @@ def refresh_provider(provider, receipts):
     return status_markdown(config), updated, library_rows(provider, updated)
 
 
-def rag_answer(message, _history, provider="pinecone", top_k=5, enable_thinking=False):
+def rag_answer(message, _history, provider="pinecone", top_k=5, enable_thinking=False, skill="general"):
     label = PROVIDER_LABELS[provider]
     if not message or not message.strip():
         yield "Please enter a question about your documents.", f"{label} · No question submitted"
         return
     try:
-        request = ChatRequest(query=message, provider=provider, top_k=int(top_k), enable_thinking=enable_thinking)
+        request = ChatRequest(query=message, provider=provider, top_k=None if top_k is None or top_k == "auto" else int(top_k), enable_thinking=enable_thinking, skill=skill)
     except (ValidationError, ValueError):
-        yield "Enter a question of up to 12,000 characters and a valid retrieval count.", f"{label} · Invalid request"
+        yield "Enter a question of up to 12,000 characters, a valid retrieval count, and a supported skill.", f"{label} · Invalid request"
         return
     message = request.query
     answer = ""
@@ -88,7 +91,8 @@ def rag_answer(message, _history, provider="pinecone", top_k=5, enable_thinking=
     yield answer, f"{label} · Retrieving context and waiting for the first token…"
     try:
         service = get_chat_service(provider)
-        for fragment in service.stream(message, top_k=int(top_k), enable_thinking=enable_thinking):
+        # Use the same Command as the API so provider options cannot drift.
+        for fragment in AnswerCommand.from_request(request).execute(service):
             if not fragment:
                 continue
             elapsed = time.perf_counter() - started

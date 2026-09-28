@@ -18,6 +18,7 @@ def EmbeddingService():
 def process_document(filename, content, provider="pinecone", progress: Progress = ignore_progress, *, providers=None):
     providers = providers if providers is not None else registry
     try:
+        # Strategy: resolve behavior once; validation is shared across providers.
         uploader = providers.resolve(provider).upload
     except ValueError as exc:
         raise HTTPException(422, "Choose a supported upload provider.") from exc

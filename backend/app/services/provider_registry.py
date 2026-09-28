@@ -14,6 +14,8 @@ class ProviderDefinition:
     inspect: Callable[[ChatService], dict[str, Any]]
 
 
+# Strategy registry: choose interchangeable upload behavior by provider name.
+# Factories are callables, not a GoF Factory Method subclass hierarchy.
 class ProviderRegistry:
     def __init__(self, definitions: dict[str, ProviderDefinition]):
         self._definitions = dict(definitions)

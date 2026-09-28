@@ -1,131 +1,378 @@
-# RAG Knowledge Assistant
+# Technical Document Knowledge Assistant
 
-A FastAPI + Gradio workspace for technical documents, with Pinecone Assistant
-and NVIDIA. The interface starts in dark mode; use the Dark mode toggle to
-switch. Pinecone Assistant is selected by default.
+A retrieval-augmented generation (RAG) application for asking questions about technical documents. FastAPI provides the API, Gradio provides the browser workspace, and hosted AI services provide retrieval and generation.
 
-## How it works
+**Pinecone Assistant is the default provider.** Users can switch to NVIDIA for a configurable retrieval workflow and task-specific answer skills. The interface starts in dark mode.
 
-The selected provider controls **upload, chat, library, and connection checks**.
-An upload never silently switches providers or writes to both destinations.
+## Contents
 
-| Provider           | Documents                                    | Retrieval                                                           | Generation           |
-| ------------------ | -------------------------------------------- | ------------------------------------------------------------------- | -------------------- |
-| Pinecone Assistant | Assistant file library                       | Managed by Assistant                                                | Assistant chat       |
-| NVIDIA             | Configured Pinecone index (currently`rag`) | Integrated text search + reranking, or HF vectors for dense indexes | NVIDIA streaming API |
+- [Capabilities](#capabilities)
+- [Provider workflows](#provider-workflows)
+- [Project structure](#project-structure)
+- [Architecture](#architecture)
+- [Local setup](#local-setup)
+- [Configuration](#configuration)
+- [Using the workspace](#using-the-workspace)
+- [NVIDIA skills](#nvidia-skills)
+- [API reference](#api-reference)
+- [Testing](#testing)
+- [Docker and CI/CD](#docker-and-cicd)
+- [Operational considerations](#operational-considerations)
+- [Troubleshooting](#troubleshooting)
+- [Acknowledgments](#acknowledgments)
 
-Assistant files must finish processing before chat. Refresh the file library
-until their status is Available. NVIDIA's list shows session uploads; existing
-index records remain searchable. Each question is independent of chat history.
+## Capabilities
 
-## Project map
+- PDF and TXT uploads with configurable size validation.
+- Provider-specific uploads, chat, connection checks, and library views.
+- Streamed answers with first-token and elapsed-time feedback.
+- NVIDIA skills for summaries, explanations, and requirement extraction.
+- Responsive Gradio workspace with dark/light themes and clickable question suggestions.
+- Lazy provider construction and cached service clients.
+- Separate API, application services, provider adapters, and document-processing modules.
+- Feature-organized offline tests and automated container checks in GitHub Actions.
+
+The application calls hosted models; it does not download or run NVIDIA model weights locally.
+
+## Provider workflows
+
+| Behavior              | Pinecone Assistant                   | NVIDIA                                                           |
+| --------------------- | ------------------------------------ | ---------------------------------------------------------------- |
+| Document destination  | Assistant file library               | Configured Pinecone index and namespace                          |
+| Parsing and retrieval | Managed by Assistant                 | Application parsing/chunking plus index search                   |
+| Embeddings            | Managed by Assistant                 | Pinecone integrated embeddings or hosted Hugging Face embeddings |
+| Answer generation     | Assistant chat API                   | NVIDIA API through an OpenAI-compatible client                   |
+| Task skills           | Assistant's existing behavior        | General, summarize, explain, requirements                        |
+| Library display       | Remote Assistant files after refresh | Upload receipts from the current UI session                      |
+
+### Pinecone Assistant
 
 ```text
-backend/
-  app/
-    main.py                   FastAPI entry point and UI mount
-    core/config.py            Environment settings and operational limits
-    api/app_router/           Router composition
-    api/routes/               Thin HTTP endpoints
-    schemas/                  Request validation
-    services/
-      provider_service.py     Provider selection and cached clients
-      ingestion_service.py    Upload validation and routing
-      assistant_service.py    Assistant files and streamed answers
-      rag_service.py          NVIDIA retrieval and grounded prompts
-      llm_service.py          NVIDIA streaming client
-    pipeline/                 Parsing, chunking, embeddings, index access
-    ui/
-      frontend.py             Components and event wiring
-      handlers.py             UI request handlers and session state
-      styles.py               Theme, header, and empty state
-      theme.css               Responsive styling
-  requirements.txt            Dependency source of truth
-  Dockerfile                  Non-root runtime image
-  .dockerignore               Excludes credentials, virtualenv, caches
- tests/                       Offline routing, streaming, limits, UI checks
+PDF/TXT -> validate upload -> Assistant file library -> processing
+Question -> Assistant managed retrieval and generation -> streamed answer
 ```
+
+Wait for uploaded files to become available before asking questions. Use **Refresh connection & files** to check their state.
+
+### NVIDIA
+
+```text
+PDF/TXT -> validate -> extract text -> split into chunks
+    -> integrated text records OR Hugging Face vectors -> Pinecone index
+
+Question -> index search -> optional reranking -> grounded skill prompt
+    -> NVIDIA generation -> streamed answer
+```
+
+The index schema determines the embedding path. A `text: semantic_text` field uses Pinecone-managed embeddings. The supported dense-vector path uses Hugging Face vectors with a matching index dimension; document-schema indexes must expose the supported `_values` field. Schema checks reject incompatible configurations before indexing.
+
+Uploads go only to the selected provider. Assistant files and NVIDIA index records are separate; the application does not synchronize them or silently fall back to another provider. Existing NVIDIA index records remain searchable even if they are absent from the current session's upload list. Startup does not create, delete, or migrate remote indexes.
+
+## Project structure
+
+```text
+.
+|-- .github/
+|   `-- workflows/ci-cd.yml       Tests, Docker checks/publication, cloud deployment
+|-- backend/
+|   |-- app/
+|   |   |-- main.py              ASGI entry point
+|   |   |-- application.py       Application factory, health endpoint, UI mounting
+|   |   |-- api/
+|   |   |   |-- app_router/      Router composition and compatibility exports
+|   |   |   `-- routes/          Chat, upload, and provider HTTP endpoints
+|   |   |-- core/config.py       Settings grouped by provider and operational concern
+|   |   |-- schemas/             Validated API data models
+|   |   |-- services/            Application workflows, contracts, provider adapters
+|   |   |-- pipeline/            Parsing, splitting, embeddings, and index operations
+|   |   |-- ui/                  Gradio layout, handlers, theme, and CSS
+|   |   `-- requirements.txt     Compatibility include for ../requirements.txt
+|   |-- requirements.txt         Dependencies used by pip, tests, and Docker
+|   |-- pyproject.toml           Cloud project metadata, dependencies, ASGI entry point
+|   |-- Dockerfile              Multi-stage, non-root Python 3.11 container
+|   |-- .dockerignore           Excludes secrets, caches, and local deployment files
+|   `-- .gitignore              Backend-specific source-control exclusions
+|-- tests/                      Offline tests organized by feature
+|   |-- conftest.py             Shared fixtures and in-process API client
+|   `-- README.md               Test coverage map and focused commands
+|-- pytest.ini                  Test discovery and backend import path
+|-- ARCHITECTURE.md              SOLID principles and extension guidance
+|-- .gitignore                  Repository-wide exclusions
+`-- README.md                   Project guide
+```
+
+Python `__init__.py` files establish packages or expose public imports. Local `.venv`, `.env`, `.fastapicloud`, cache directories, and editor-generated `tempCodeRunnerFile.py` files are development artifacts, not application modules to deploy. Do not commit credentials or local environment state.
+
+### API and schemas
+
+| Module                           | Responsibility                                                     |
+| -------------------------------- | ------------------------------------------------------------------ |
+| `api/app_router/app_router.py` | Composes routers; preserves legacy router aliases                  |
+| `api/routes/chat.py`           | Validates chat requests and returns streamed text                  |
+| `api/routes/ingest.py`         | Accepts multipart uploads, bounds reads, and closes uploaded files |
+| `api/routes/providers.py`      | Reports configuration or explicitly checks remote connectivity     |
+| `schemas/chat.py`              | Validates provider, question, retrieval count, and NVIDIA skill    |
+| `schemas/ingest.py`            | Defines ingestion data models                                      |
+
+### Services
+
+| Module                   | Responsibility                                                         |
+| ------------------------ | ---------------------------------------------------------------------- |
+| `contracts.py`         | Small protocols for chat, generation, retrieval, parsing, and indexing |
+| `provider_registry.py` | Provider definitions and lookup                                        |
+| `provider_service.py`  | Wires adapters, caches clients, and provides readiness summaries       |
+| `assistant_service.py` | Assistant chat, file upload, listing, and status                       |
+| `rag_service.py`       | Retrieves context and coordinates NVIDIA generation                    |
+| `llm_service.py`       | NVIDIA streaming, token limits, timing, and stream cleanup             |
+| `ingestion_service.py` | Validates uploads and dispatches to the selected provider              |
+| `indexing_service.py`  | Coordinates loader, chunker, optional embedder, and index writer       |
+| `prompts.py`           | Builds grounded prompts with deduplicated passages                     |
+| `skills.py`            | Defines NVIDIA task instructions and per-request budgets               |
+
+The shared `services/chat_command.py` module implements an immutable answer Command used by both HTTP and Gradio. See [the full GoF pattern catalog](ARCHITECTURE.md#design-pattern-policy) for all 23 patterns, their applicability, and the preserved SOLID boundaries.
+
+### Document pipeline and UI
+
+| Module                            | Responsibility                                                 |
+| --------------------------------- | -------------------------------------------------------------- |
+| `pipeline/loader.py`            | Parses TXT and text-bearing PDFs from bytes or files           |
+| `pipeline/chunker.py`           | Splits documents into retrieval chunks                         |
+| `pipeline/embedder.py`          | Calls hosted Hugging Face inference through a reusable client  |
+| `pipeline/index_schema.py`      | Checks supported vector schemas and dimensions                 |
+| `pipeline/retrieval_service.py` | Writes records, searches, and reranks results                  |
+| `ui/frontend.py`                | Builds components and connects their events                    |
+| `ui/handlers.py`                | Handles streamed answers, uploads, and session library updates |
+| `ui/styles.py`                  | Defines theme configuration and presentation assets            |
+| `ui/theme.css`                  | Styles the responsive workspace                                |
+
+## Architecture
+
+The project applies SOLID principles through focused modules, small protocols, a provider registry, and dependency injection. RAG and indexing workflows receive their dependencies instead of constructing SDK clients internally. Provider-specific capabilities remain separate; an Assistant file adapter does not need to implement vector indexing.
+
+The API and UI call the same application services. `create_app(include_ui=False)` supports API-only tests; the normal ASGI entry point mounts the browser workspace.
+
+See [Architecture and SOLID principles](ARCHITECTURE.md) for dependency boundaries and instructions for adding providers.
+
+## Local setup
+
+Deployment targets **Python 3.11**. Use that version locally to match CI and the container. Git is required for the release workflow. Docker Desktop is optional: GitHub-hosted runners build and test containers online.
+
+From the repository root in Windows PowerShell:
+
+```powershell
+py -3.11 -m venv backend/.venv
+.\backend\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt pytest
+```
+
+Create an untracked `backend/.env` and configure the providers you intend to use. Environment-variable names are documented below; no actual credentials are included in this repository guide.
+
+To start the application yourself:
+
+```powershell
+Set-Location backend
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Open `http://127.0.0.1:8000/` for the workspace or `/docs` for interactive API documentation. Add `--reload` only during development.
 
 ## Configuration
 
-Settings load from `backend/.env` regardless of the working directory; process
-environment variables override that file. Keep credentials private and untracked.
+Settings load `backend/.env` independently of the current working directory. Process environment variables take precedence. Restart the app after changing provider settings because service instances are cached.
 
-- Assistant: `PINECONE_ASSISTANT_API_KEY`, `PINECONE_ASSISTANT_NAME`,
-  `PINECONE_ASSISTANT_MODEL`, `PINECONE_ASSISTANT_TIMEOUT_SECONDS`.
-- NVIDIA: `MODEL_API_KEY`, `MODEL_BASE_URL`, `MODEL_NAME`,
-  `MODEL_TIMEOUT_SECONDS`, `MODEL_TEMPERATURE`, `MODEL_TOP_P`,
-  `MODEL_MAX_TOKENS` (1024 currently), `MODEL_ENABLE_THINKING` (false by default).
-- Index: `PINECONE_API_KEY`, `PINECONE_INDEX_NAME`, `PINECONE_NAMESPACE`,
-  `PINECONE_DIMENSION`, `PINECONE_MODEL` (reranker), `EMBEDDING_MODEL`, `HF_TOKEN`.
-- Operations: `MAX_UPLOAD_MB=20`, `UI_QUEUE_SIZE=32`, `UI_CONCURRENCY=4`.
+| Group              | Environment variables                                                                                                                                |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pinecone Assistant | `PINECONE_ASSISTANT_API_KEY`, `PINECONE_ASSISTANT_NAME`, `PINECONE_ASSISTANT_MODEL`, `PINECONE_ASSISTANT_TIMEOUT_SECONDS`                    |
+| NVIDIA generation  | `MODEL_API_KEY`, `MODEL_BASE_URL`, `MODEL_NAME`, `MODEL_TIMEOUT_SECONDS`, `MODEL_TEMPERATURE`, `MODEL_TOP_P`, `MODEL_MAX_TOKENS`       |
+| NVIDIA retrieval   | `PINECONE_API_KEY`, `PINECONE_INDEX_NAME`, `PINECONE_NAMESPACE`, `PINECONE_DIMENSION`, `PINECONE_MODEL`, `EMBEDDING_MODEL`, `HF_TOKEN` |
 
-A `text: semantic_text` index uses Pinecone-managed embeddings. A dense `_values`
-index uses Hugging Face vectors with matching dimensions. The application does
-not create, delete, or migrate remote indexes at startup.
+`PINECONE_MODEL` selects the reranker. `PINECONE_DIMENSION` must match dense embeddings when that path is used. Current NVIDIA configuration validation still requires the retrieval settings listed above, even when integrated embeddings skip Hugging Face inference calls. Assistant configuration does not require NVIDIA credentials.
 
-## Run locally
+| Optional setting          | Default   | Meaning                                         |
+| ------------------------- | --------- | ----------------------------------------------- |
+| `MODEL_ENABLE_THINKING` | `false` | Default NVIDIA reasoning option                 |
+| `MAX_UPLOAD_MB`         | `5`     | Upload limit; converted using 1024 x 1024 bytes |
+| `UI_QUEUE_SIZE`         | `8`     | Gradio queue capacity                           |
+| `UI_CONCURRENCY`        | `1`     | Default Gradio event concurrency                |
 
-From `backend`, install `pip install -r requirements.txt`, then run:
+These are conservative defaults for a small hosting instance, not a guarantee of memory usage. UI concurrency does not limit direct API calls or guarantee a single in-flight operation across every event type. Existing cloud environment values override defaults.
 
-```sh
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+Keep `backend/requirements.txt` and `backend/pyproject.toml` dependency declarations synchronized; CI checks their equality. `backend/app/requirements.txt` forwards to the backend requirements file. Use `pinecone`, not the deprecated `pinecone-client` package.
+
+## Using the workspace
+
+1. Select **Pinecone Assistant** or **NVIDIA model**.
+2. Refresh the connection and inspect readiness.
+3. Upload a PDF or TXT file to the selected provider.
+4. For Assistant, wait for processing to finish. For NVIDIA, wait for indexing to complete.
+5. Enter a question or click a suggested question to submit it.
+6. For NVIDIA, optionally select a skill, retrieval count, and thinking mode.
+
+Switching providers changes the destination for subsequent operations. Questions are independent: visible chat history is not sent as conversational context to either provider.
+
+## NVIDIA skills
+
+Select a skill under NVIDIA options or send its value in the API request.
+
+| API value        | Purpose                                                     | Maximum output tokens | Passage character budget         |
+| ---------------- | ----------------------------------------------------------- | --------------------- | -------------------------------- |
+| `general`      | General grounded answer                                     | `MODEL_MAX_TOKENS`  | 16,000 |
+| `summarize`    | Up to five concise summary bullets                          | 512                   | 12,000                           |
+| `explain`      | Plain-language explanation and a supported example          | 768                   | 16,000                           |
+| `requirements` | Relevant requirements with wording and conditions preserved | 1,024                 | 20,000                           |
+
+The configured `MODEL_MAX_TOKENS` remains an upper bound for every skill. Context budgets apply to passage text, not the entire prompt or its token count. Oversized passages are skipped rather than partially quoted. Skills preserve request-specific settings without changing cached clients. Pinecone Assistant ignores this NVIDIA-only option.
+
+Summaries cover retrieved passages, not entire documents. Passage labels such as `[1]` refer to the model's supplied context; they are not verified document/page citations. Instructions encourage grounded output but do not guarantee factual correctness.
+
+### Choosing retrieval depth
+
+`top_k` limits the number of passages returned for a question; it does not limit
+how many stored documents the index can search. A larger collection alone does
+not require a larger value. NVIDIA retrieves up to twice this count as candidates,
+deduplicates them, and reranks multiple results before building the prompt.
+
+The UI defaults to **Automatic (based on skill)**: General uses 5 passages,
+Explain uses 4, and Summarize/Requirements use 8. These are bounded starting
+policies, not a learned relevance threshold or a guarantee of optimal recall.
+Choose a manual value to override them. For API clients, `"top_k": null` selects
+Automatic; omitting the field keeps the existing default of 5 for compatibility.
+Pinecone Assistant manages retrieval independently.
+
+All NVIDIA skills now have passage-character budgets, including General at
+16,000 characters. The actual supplied context may contain fewer passages after
+deduplication and budgeting. Tune counts using representative questions: compare
+answer coverage, correctness, first-token latency, and total latency. Increasing
+a count can improve coverage but also increases reranking and prompt work.
+
+## API reference
+
+| Method | Path                      | Purpose                                            |
+| ------ | ------------------------- | -------------------------------------------------- |
+| GET    | `/`                     | Gradio workspace                                   |
+| GET    | `/api`                  | API welcome response                               |
+| GET    | `/health`               | Application liveness                               |
+| GET    | `/docs`                 | Interactive OpenAPI documentation                  |
+| POST   | `/chat/stream`          | Stream an answer as plain text                     |
+| POST   | `/ingest/upload`        | Upload multipart`file` and optional `provider` |
+| GET    | `/providers/{provider}` | Configuration summary                              |
+
+Add `?check_connection=true` to a provider request to perform a remote status check. Liveness alone does not verify provider credentials or availability.
+
+Example NVIDIA chat body:
+
+```json
+{
+  "query": "What startup requirements are stated in the documents?",
+  "provider": "nvidia",
+  "top_k": 5,
+  "enable_thinking": false,
+  "skill": "requirements"
+}
 ```
 
-Open `/` for the workspace, `/docs` for API documentation, `/health` for liveness.
-For development only, add `--reload`.
+Provider defaults to `pinecone`, skill to `general`, and retrieval count to `5`. Questions must be nonblank and at most 12,000 characters. API retrieval counts range from 1 to 50; the UI offers Automatic or manual values from 1 to 20. Streaming failures after headers are sent appear in the response body rather than changing the HTTP status.
 
-## API
+## Testing
 
-- `POST /chat/stream`: JSON `query`, `provider` (defaults to `pinecone`),
-  optional NVIDIA `top_k` (1–50) and `enable_thinking`.
-- `POST /ingest/upload`: multipart `file` and `provider` (defaults to `pinecone`).
-- `GET /providers/{provider}`: public configuration summary; add
-  `?check_connection=true` for a remote status check.
-- `GET /health`: local liveness; does not certify provider availability.
+From the repository root:
 
-PDF and TXT uploads have a configurable size limit. Questions must be nonblank
-and no longer than 12,000 characters. Provider errors are reported without
-exposing credentials. Streaming errors appear in the response body once HTTP
-headers have been sent.
-
-## Performance
-
-Clients are reused. Assistant bypasses the NVIDIA retrieval pipeline. Integrated
-indexes skip Hugging Face requests; single-result searches skip reranking.
-NVIDIA prompts request concise answers and log first-token and total latency.
-Output-limit notices explain incomplete answers. Increase `MODEL_MAX_TOKENS`
-when longer answers are needed. Hosted-provider latency is outside this app's control.
-
-## Deployment
-
-```sh
-docker build -t rag-assistant backend
-docker run --env-file backend/.env -p 8000:8000 rag-assistant
+```powershell
+.\backend\.venv\Scripts\python.exe -m pytest -q
+.\backend\.venv\Scripts\python.exe -m pytest tests/test_nvidia_skills.py -v
+.\backend\.venv\Scripts\python.exe -m pip check
 ```
 
-The image runs as a non-root user with one worker because Gradio queue/session
-state is process-local. Use sticky sessions and an appropriate shared-state
-strategy before scaling horizontally. Temporary UI uploads are eligible for
-cleanup after 24 hours, checked hourly. Backend API ingestion parses in memory.
+`pytest.ini` selects `tests/` and adds `backend/` to the import path. Tests cover routing, upload limits and cleanup, provider isolation, retrieval modes, schema validation, streaming, skills, UI wiring, and dependency-injection contracts. External services are mocked, and API calls use an in-process test client.
 
-Before public exposure, deploy behind authenticated HTTPS access with rate and
-request-body limits. The app does **not** implement authentication, per-user
-library isolation, or distributed rate limiting. Provider libraries are shared
-within the configured account/namespace. Queue and upload limits are resource
-bounds, not a substitute for access control. This code has offline tests; load,
-security, container, and browser validation remain deployment responsibilities.
+See [the test suite guide](tests/README.md) for the file-by-file map. Offline tests do not validate real provider responses, browser interaction, or production load. CI separately starts a container to check its health and frontend response.
 
-## Tests
+## Docker and CI/CD
 
-From the repository root using the backend virtual environment:
+### Container design
 
-```sh
-python -m pytest -q
+The [Dockerfile](backend/Dockerfile) uses separate build and runtime stages based on Python 3.11 Debian slim. It installs dependencies into a virtual environment, checks dependency consistency, copies application source and UI assets, and runs Uvicorn as a non-root user with one worker.
+
+The health check requests `http://127.0.0.1:8000/health` **inside the container**. This address does not refer to the developer's computer or the public deployment URL. The build context is `backend/`, so root-level tests are excluded. The runtime does not include a local `.env` file.
+
+### Automated release
+
+[`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) runs on GitHub-hosted Ubuntu runners:
+
+```text
+Pull request to main
+  -> Python tests and dependency checks
+  -> Docker build, container health check, frontend HTTP check
+
+Push or merge to main
+  -> Same checks
+  -> Publish tested image to Docker Hub
+  -> Deploy the same source commit to FastAPI Cloud
 ```
 
-Tests mock remote providers and build UI components without starting a server.
+A failed job blocks downstream publication and deployment. Images receive `sha-<commit>` and `latest` tags; `latest` identifies the latest published image, not necessarily a successful cloud deployment.
 
-See [the test suite guide](tests/README.md) for the feature-by-feature test map and focused test commands.
+FastAPI Cloud builds uploaded source separately. This workflow does not deploy the Docker Hub image to FastAPI Cloud. Docker Desktop is not required on the local machine.
 
-See [Architecture and SOLID principles](ARCHITECTURE.md) for dependency boundaries, provider extension, and design tradeoffs.
+### Deployment configuration
+
+Configure these repository **Actions secrets** using your own values:
+
+| Secret                   | Purpose                                        |
+| ------------------------ | ---------------------------------------------- |
+| `DOCKERHUB_USERNAME`   | Docker Hub account owning the image repository |
+| `DOCKERHUB_TOKEN`      | Token authorized to publish images             |
+| `FASTAPI_CLOUD_TOKEN`  | Deployment token for the cloud application     |
+| `FASTAPI_CLOUD_APP_ID` | Full UUID of the target application            |
+
+The workflow publishes to `<Docker Hub username>/rag-knowledge-assistant`; create that repository or update the workflow's image name. Set the FastAPI Cloud **Application Directory** to `backend` and configure provider credentials in its environment settings. Avoid a second automatic deployment trigger that bypasses the workflow's test gates.
+
+Keep deployment credentials in GitHub secrets and runtime credentials in the hosting environment. Do not paste real values into YAML, source files, examples, or documentation.
+
+After reviewing and committing changes, push to `main` or merge a checked pull request. Monitor GitHub Actions, then verify the live health endpoint, uploads, and chat for both providers.
+
+## Operational considerations
+
+- Gradio uses process-local queue/session state. Verify session routing and shared-state requirements before deploying multiple workers or replicas.
+- Uploaded PDF parsing can consume more memory than the file size. The NVIDIA PDF loader extracts text but does not implement OCR for scanned images.
+- Gradio temporary uploads are eligible for cleanup after 24 hours, checked hourly. API document parsing uses in-memory content.
+- Provider clients are reused. Integrated index queries skip Hugging Face calls; single-result searches skip reranking. NVIDIA streams tokens and records timing information.
+- Skill output/context limits reduce request size; they do not guarantee faster hosted-model responses. No cross-request retrieval-result cache is implemented.
+- Hosting scale-to-zero can add cold-start latency. Check actual resource usage and provider latency under representative traffic.
+- Authentication, per-user library isolation, and distributed rate limiting are not implemented. Provider libraries are shared within the configured account/namespace. Protect public access and apply appropriate request limits before handling private documents.
+- Dependencies have compatibility ranges but are not fully locked. The Docker and cloud builds are separate, so exact dependency reproducibility is not guaranteed.
+
+## Troubleshooting
+
+| Symptom                              | Check                                                                             |
+| ------------------------------------ | --------------------------------------------------------------------------------- |
+| Provider shows setup required        | Required environment-variable names and values; restart after changes             |
+| Assistant cannot find NVIDIA uploads | Upload to Assistant separately; storage is provider-specific                      |
+| Assistant files are still processing | Refresh until the remote files become available                                   |
+| Dense-vector dimension/schema error  | Index schema, embedding width, and configured dimension                           |
+| Upload is rejected                   | PDF/TXT extension and`MAX_UPLOAD_MB`                                            |
+| Response stops at the length limit   | Narrow the question or use General answer with a suitable configured token limit  |
+| CI dependency consistency fails      | Match requirements and project dependency declarations                            |
+| Container job fails                  | Startup logs, dependency compatibility, health status, and frontend HTTP response |
+| Cloud deployment fails               | Deployment secrets, token validity, application directory, and cloud build logs   |
+
+This guide contains configuration names and generic examples only. Supply credentials privately in your own environment.
+
+## Acknowledgments
+
+This project uses the following API services and acknowledges the teams that provide them:
+
+| Provider                                                             | Contribution to this project                                                                                                                                        |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Pinecone](https://www.pinecone.io/)                                  | Pinecone Assistant for managed document uploads, retrieval, and chat; Pinecone indexes for NVIDIA retrieval, integrated embeddings where configured, and reranking. |
+| [NVIDIA](https://build.nvidia.com/)                                   | Hosted model inference for streamed answers in the NVIDIA provider workflow.                                                                                        |
+| [Hugging Face](https://huggingface.co/docs/inference-providers/index) | Hosted feature-extraction inference through`huggingface_hub.InferenceClient` for the dense-vector embedding path.                                                 |
+
+### SDKs, frameworks, and delivery tools
+
+Thanks also to the maintainers of FastAPI, Gradio, Pydantic, LangChain Core and Text Splitters, NumPy, pypdf, Uvicorn, pytest, and the other dependencies that support this application.
+
+The [OpenAI Python SDK](https://github.com/openai/openai-python) provides the client used to call the configured NVIDIA OpenAI-compatible endpoint. SDK usage here does not mean the NVIDIA workflow sends its requests to OpenAI's hosted API.
+
+The delivery workflow uses GitHub Actions for automation, Docker and Docker Hub for container builds and image publication, and FastAPI Cloud for application hosting.
+
+Model selection is configurable. Credit for individual model weights belongs to their respective authors and publishers; consult the selected model's documentation for attribution and licensing details. These acknowledgments describe technology usage and do not imply sponsorship or endorsement.

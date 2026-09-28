@@ -1,0 +1,23 @@
+[project]
+name = "rag-knowledge-assistant"
+version = "0.1.0"
+requires-python = "==3.11.*"
+dependencies = [
+    "fastapi[standard]",
+    "uvicorn[standard]",
+    "gradio>=6.26,<7",
+    "python-multipart",
+    "python-dotenv",
+    "pydantic",
+    "pydantic-settings",
+    "openai",
+    "pinecone>=10.0.0,<11",
+    "huggingface-hub",
+    "numpy",
+    "langchain-core",
+    "langchain-text-splitters",
+    "pypdf",
+]
+
+[tool.fastapi]
+entrypoint = "app.main:app"

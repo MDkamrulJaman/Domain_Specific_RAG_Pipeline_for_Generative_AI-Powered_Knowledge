@@ -5,6 +5,8 @@ from app.services.contracts import (
 )
 
 
+# DIP: inject each capability. This composed workflow is not GoF Template Method
+# (there is no base-class algorithm with subclass overrides).
 class IndexingService:
     def __init__(self, writer: VectorWriter, loader: DocumentLoader,
                  chunker: DocumentChunker, embedder: Callable[[], ChunkEmbedder]):
@@ -14,6 +16,7 @@ class IndexingService:
         self.embedder = embedder
 
     def index(self, filename: str, content: bytes, progress: Progress = ignore_progress):
+        # Progress notification is an observer-style callback, not a subscription bus.
         progress(0.15, "Extracting document text")
         documents = self.loader.load_bytes(filename, content)
         if not documents:

@@ -1,0 +1,204 @@
+# Development overview CI_CD workflow:
+# This workflow provides automated quality assurance and delivery for the
+# Domain-Specific RAG application. It runs the Python test suite, builds and
+# smoke-tests the backend Docker image, publishes the verified image to Docker
+# Hub, and deploys the application to FastAPI Cloud.
+#
+# Delivery process:
+# 1. Pull requests and pushes to `main` check out the source and configure
+#    Python 3.11.
+# 2. Backend dependencies are installed and tests are executed with pytest.
+# 3. The backend Docker image is built with Buildx and checked through its
+#    `/health` endpoint before it can proceed.
+# 4. Only successful pushes to `main` authenticate with Docker Hub and publish
+#    both an immutable commit tag and the `latest` tag.
+# 5. After publication, the checked-out commit is deployed to FastAPI Cloud.
+#
+# Required repository secrets:
+# DOCKERHUB_USERNAME, DOCKERHUB_TOKEN, FASTAPI_CLOUD_TOKEN, and
+# FASTAPI_CLOUD_APP_ID.
+name: Test, Docker, and FastAPI Cloud
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  # The workflow only reads repository contents. It writes externally only
+  # after successful tests on pushes to main: the image goes to Docker Hub and
+  # the application is deployed to FastAPI Cloud; neither requires GitHub write permissions.
+  contents: read
+
+concurrency:
+  # Keep runs for the same branch or pull request isolated from other releases.
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  # Do not cancel an in-progress release when another commit is pushed.
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Python tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Keep tests deterministic and disable unnecessary Gradio analytics.
+    env:
+      GRADIO_ANALYTICS_ENABLED: "False"
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          # Reuse cached pip packages when requirements have not changed.
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        # Install application dependencies and the test runner.
+        run: python -m pip install -r backend/requirements.txt pytest
+
+      - name: Check dependency consistency
+        run: |
+          python -m pip check
+          python - <<'PY'
+          import tomllib
+          from pathlib import Path
+          project = tomllib.loads(Path('backend/pyproject.toml').read_text())
+          requirements = {
+              line.strip() for line in Path('backend/requirements.txt').read_text().splitlines()
+              if line.strip() and not line.lstrip().startswith('#')
+          }
+          assert set(project['project']['dependencies']) == requirements, 'Dependency files differ'
+          assert project['tool']['fastapi']['entrypoint'] == 'app.main:app'
+          PY
+
+      - name: Run tests
+        # Fail the workflow if any test fails.
+        run: python -m pytest -q
+
+  docker:
+    # Runner: GitHub-hosted Ubuntu Linux.
+    name: Build, check, and publish image
+    # Only build the image after the Python tests pass.
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          # Load the image into the local Docker daemon for the smoke test.
+          load: true
+          # Publishing is done later, only for pushes to main.
+          push: false
+          tags: rag-ci:${{ github.sha }}
+          # Cache Docker layers to speed up future workflow runs.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Check container startup and health
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          # Start the freshly built image and expose its health endpoint locally.
+          docker run -d \
+            --name rag-smoke \
+            -p 127.0.0.1:8000:8000 \
+            -e GRADIO_ANALYTICS_ENABLED=False \
+            rag-ci:${{ github.sha }}
+
+          # Wait for the Dockerfile health check, with a bounded job-step timeout.
+          for attempt in $(seq 1 60); do
+            state="$(docker inspect --format '{{.State.Status}}' rag-smoke)"
+            health="$(docker inspect --format '{{.State.Health.Status}}' rag-smoke)"
+            if [ "$health" = "healthy" ]; then
+              # Also check that the mounted Gradio frontend is served.
+              curl --fail --silent --show-error --max-time 15 \
+                http://127.0.0.1:8000/ > /dev/null
+              exit 0
+            fi
+            if [ "$state" = "exited" ] || [ "$health" = "unhealthy" ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          docker logs rag-smoke
+          exit 1
+
+      - name: Remove test container
+        # Always clean up the smoke-test container, including after failures.
+        if: always()
+        run: docker rm -f rag-smoke || true
+
+      - name: Log in to Docker Hub
+        # Pull requests build and test the image but must not publish it.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Publish tested image
+        # Publish only the image that passed the startup check on main.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        shell: bash
+        run: |
+          IMAGE="$DOCKERHUB_USERNAME/rag-knowledge-assistant"
+
+          # Keep a commit-specific tag and update the latest published image tag.
+          docker tag "rag-ci:$GITHUB_SHA" "$IMAGE:sha-$GITHUB_SHA"
+          docker tag "rag-ci:$GITHUB_SHA" "$IMAGE:latest"
+
+          docker push "$IMAGE:sha-$GITHUB_SHA"
+          docker push "$IMAGE:latest"
+
+  deploy:
+    name: Deploy to FastAPI Cloud
+    # Deployment runs only after the tested image has been published.
+    needs: docker
+    # Deployments are restricted to pushes on the main branch.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out the same source commit
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install deployment CLI
+        # Install the FastAPI command-line tools used by the deployment step.
+        run: python -m pip install "fastapi[standard]" "fastapi-cloud-cli>=0.9.0"
+
+      - name: Deploy application
+        # Upload repository source. Set Application Directory = backend in the cloud dashboard.
+        # FastAPI Cloud builds this source separately; it does not pull the Docker Hub image.
+        run: fastapi deploy
+        env:
+          FASTAPI_CLOUD_TOKEN: ${{ secrets.FASTAPI_CLOUD_TOKEN }}
+          FASTAPI_CLOUD_APP_ID: ${{ secrets.FASTAPI_CLOUD_APP_ID }}

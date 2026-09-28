@@ -6,6 +6,7 @@ from app.core.config import NvidiaSettings
 logger = logging.getLogger(__name__)
 
 
+# Adapter: translate our TextGenerator interface to the NVIDIA-compatible SDK.
 class LLMService:
     def __init__(self, settings=None, client=None):
         self.settings = settings if settings is not None else NvidiaSettings()
@@ -15,7 +16,8 @@ class LLMService:
             timeout=self.settings.MODEL_TIMEOUT_SECONDS,
         )
 
-    def stream(self, prompt: str, enable_thinking: bool | None = None):
+    def stream(self, prompt: str, enable_thinking: bool | None = None,
+               max_tokens: int | None = None):
         if not prompt.strip():
             return
         start = time.perf_counter()
@@ -24,7 +26,8 @@ class LLMService:
             messages=[{"role": "user", "content": prompt}],
             temperature=self.settings.MODEL_TEMPERATURE,
             top_p=self.settings.MODEL_TOP_P,
-            max_tokens=self.settings.MODEL_MAX_TOKENS,
+            max_tokens=(self.settings.MODEL_MAX_TOKENS if max_tokens is None
+                        else max(1, min(max_tokens, self.settings.MODEL_MAX_TOKENS))),
             extra_body={"chat_template_kwargs": {
                 "enable_thinking": (self.settings.MODEL_ENABLE_THINKING
                     if enable_thinking is None else enable_thinking),
@@ -45,7 +48,7 @@ class LLMService:
                         logger.info("NVIDIA first response token in %.2f seconds", first_token)
                     yield choice.delta.content
             if finish_reason == "length":
-                yield "\n\n[Response reached its length limit. Ask a narrower follow-up, or increase MODEL_MAX_TOKENS for longer answers.]"
+                yield "\n\n[Response reached its length limit. Ask a narrower follow-up, or use General answer with a higher MODEL_MAX_TOKENS for longer answers.]"
         finally:
             response.close()
             logger.info("LLM request completed in %.2f seconds (first token: %s; finish: %s)",

@@ -11,6 +11,8 @@ from app.services.contracts import ChatService
 from app.services.provider_registry import ProviderDefinition, ProviderRegistry
 
 
+# Cached factory: process-local reuse, not a strict Singleton. Concurrent first
+# calls may construct multiple clients; replicas never share this cache.
 @lru_cache(maxsize=1)
 def get_vectorstore():
     from app.pipeline.retrieval_service import VectorStore
@@ -107,6 +109,7 @@ def provider_configuration(provider: Provider):
     return result
 
 
+# Facade: expose one readiness operation over the provider-specific SDK calls.
 def inspect_provider(provider: Provider):
     result = provider_configuration(provider)
     result.update(connected=False, files=[])

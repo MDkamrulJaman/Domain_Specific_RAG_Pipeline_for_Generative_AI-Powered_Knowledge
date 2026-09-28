@@ -1,6 +1,7 @@
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
+# Adapter: isolate the LangChain splitter API behind DocumentChunker.
 class DocumentSplitter:
     """Split documents while preserving source metadata."""
     def __init__(self, chunk_size: int = 500, chunk_overlap: int = 50):

@@ -74,7 +74,7 @@ def test_theme_and_mount_apply_dark_mode_and_upload_limit(monkeypatch):
     options = mount.call_args.kwargs
     assert options["js"] == styles.INITIAL_THEME
     assert "classList.add('dark')" in options["head"]
-    assert options["max_file_size"] == 20 * 1024 * 1024
+    assert options["max_file_size"] == 5 * 1024 * 1024
     assert options["show_error"] is False
 
 

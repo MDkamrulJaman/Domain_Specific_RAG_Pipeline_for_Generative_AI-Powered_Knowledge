@@ -5,6 +5,7 @@ from pinecone.errors.exceptions import ApiError
 from app.core.config import AssistantSettings
 
 
+# Adapter: expose Assistant SDK operations through application-facing methods.
 class AssistantService:
     """Assistant uses its own uploaded file library, independently of rag."""
     def __init__(self, settings=None, client=None):
@@ -14,7 +15,7 @@ class AssistantService:
         self.model = settings.PINECONE_ASSISTANT_MODEL
         self.timeout = settings.PINECONE_ASSISTANT_TIMEOUT_SECONDS
 
-    def stream(self, query: str, top_k: int = 5, enable_thinking: bool | None = None):
+    def stream(self, query: str, top_k: int | None = 5, enable_thinking: bool | None = None):
         if not query.strip():
             yield "Please provide a valid query."
             return

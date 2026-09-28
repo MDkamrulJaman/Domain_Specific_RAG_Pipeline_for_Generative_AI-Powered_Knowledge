@@ -12,7 +12,7 @@ HEADER = """
   <div class="brand"><span class="brand-symbol" aria-hidden="true">✦</span> KNOWLEDGE / AI</div>
   <div class="hero-content">
     <div><p class="eyebrow">YOUR DOCUMENTS. A CLEARER PICTURE.</p>
-    <h1>Less searching.<br><span>More understanding.</span></h1>
+    <h5>Less searching.<br><span>More understanding.</span></h5>
     <p class="hero-description">Turn technical documents into a conversation.<br>Choose your assistant and find the answers that matter.</p></div>
     <div class="hero-aside"><span class="step">01 <b>Choose a provider</b></span><span class="step">02 <b>Add your documents</b></span><span class="step">03 <b>Ask a question</b></span></div>
   </div>

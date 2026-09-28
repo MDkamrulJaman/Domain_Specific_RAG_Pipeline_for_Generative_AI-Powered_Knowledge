@@ -13,6 +13,7 @@ from app.pipeline.embedder import get_embedding_service as EmbeddingService
 logger = logging.getLogger(__name__)
 
 
+# Adapter: hide Pinecone search/upsert variants behind Retriever/VectorWriter.
 class VectorStore:
     def __init__(self, settings=None, client=None, embedder_factory=None):
         settings = settings if settings is not None else RetrievalSettings()
