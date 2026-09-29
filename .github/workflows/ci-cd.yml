@@ -8,10 +8,10 @@
 # 1. Pull requests and pushes to `main` check out the source and configure
 #    Python 3.11.
 # 2. Backend dependencies are installed and tests are executed with pytest.
-# 3. The backend Docker image is built with Buildx and checked through its
-#    `/health` endpoint before it can proceed.
-# 4. Only successful pushes to `main` authenticate with Docker Hub and publish
-#    both an immutable commit tag and the `latest` tag.
+# 3. PRs and unmarked pushes build and check Docker. [test] alone skips Docker;
+#    [build] or [deploy] includes it. Tests always run before Docker.
+# 4. Only successful pushes to `main` whose head commit contains [deploy]
+#    publish a commit-specific image tag and the latest tag to Docker Hub.
 # 5. After publication, the checked-out commit is deployed to FastAPI Cloud.
 #
 # Required repository secrets:
@@ -27,7 +27,7 @@ on:
 
 permissions:
   # The workflow only reads repository contents. It writes externally only
-  # after successful tests on pushes to main: the image goes to Docker Hub and
+  # after successful tests on [deploy] pushes to main: the image goes to Docker Hub and
   # the application is deployed to FastAPI Cloud; neither requires GitHub write permissions.
   contents: read
 
@@ -88,6 +88,12 @@ jobs:
     name: Build, check, and publish image
     # Only build the image after the Python tests pass.
     needs: test
+    # PRs always build. [build] or [deploy] overrides the [test]-only choice.
+    if: >-
+      github.event_name == 'pull_request' ||
+      !contains(github.event.head_commit.message, '[test]') ||
+      contains(github.event.head_commit.message, '[build]') ||
+      contains(github.event.head_commit.message, '[deploy]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -105,7 +111,7 @@ jobs:
           file: ./backend/Dockerfile
           # Load the image into the local Docker daemon for the smoke test.
           load: true
-          # Publishing is done later, only for pushes to main.
+          # Publishing is done later, only for [deploy] pushes to main.
           push: false
           tags: rag-ci:${{ github.sha }}
           # Cache Docker layers to speed up future workflow runs.
@@ -148,16 +154,16 @@ jobs:
         run: docker rm -f rag-smoke || true
 
       - name: Log in to Docker Hub
-        # Pull requests build and test the image but must not publish it.
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        # Only the head commit of a push to main can opt in to publication.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[deploy]')
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Publish tested image
-        # Publish only the image that passed the startup check on main.
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        # Publish the verified image only when the head commit contains [deploy].
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[deploy]')
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         shell: bash
@@ -175,8 +181,8 @@ jobs:
     name: Deploy to FastAPI Cloud
     # Deployment runs only after the tested image has been published.
     needs: docker
-    # Deployments are restricted to pushes on the main branch.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Opt-in release: the head commit on main must contain [deploy].
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[deploy]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
 

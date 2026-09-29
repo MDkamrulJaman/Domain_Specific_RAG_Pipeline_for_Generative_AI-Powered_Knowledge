@@ -296,22 +296,64 @@ The health check requests `http://127.0.0.1:8000/health` **inside the container*
 
 ### Automated release
 
-[`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) runs on GitHub-hosted Ubuntu runners:
+[`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) runs on GitHub-hosted Ubuntu runners. Choose the work for a push to `main` using markers in the head commit message:
 
-```text
-Pull request to main
-  -> Python tests and dependency checks
-  -> Docker build, container health check, frontend HTTP check
+| Choice    | Commit marker               | Python tests and dependency checks | Docker build and smoke checks | Docker Hub publication and FastAPI Cloud deployment |
+| --------- | --------------------------- | ---------------------------------- | ----------------------------- | --------------------------------------------------- |
+| Test      | `[test]`                  | Yes                                | No                            | No                                                  |
+| Build     | `[build]`                 | Yes                                | Yes                           | No                                                  |
+| Deploy    | `[deploy]`                | Yes                                | Yes                           | Yes                                                 |
+| All three | `[test] [build] [deploy]` | Yes                                | Yes                           | Yes                                                 |
+| Default   | No marker                   | Yes                                | Yes                           | No                                                  |
 
-Push or merge to main
-  -> Same checks
-  -> Publish tested image to Docker Hub
-  -> Deploy the same source commit to FastAPI Cloud
+Build includes tests, and deploy includes tests, Docker health checks, and the frontend HTTP check. Combining markers selects the furthest stage: `[test] [build]` runs tests and Docker checks; any combination containing `[deploy]` requests the full release. A failed job blocks downstream publication and deployment.
+
+Pull requests targeting `main` always run tests and Docker checks, regardless of markers, and never publish or deploy. Pushes to other branches do not trigger this workflow.
+
+Images receive `sha-<commit>` and `latest` tags; `latest` identifies the latest published image, not necessarily a successful cloud deployment. FastAPI Cloud builds uploaded source separately; this workflow does not deploy the Docker Hub image to FastAPI Cloud. Docker Desktop is not required on the local machine.
+
+### Choose test, build, or deploy on a push
+
+Stage the intended files with `git add path/to/changed-file`, replacing that example path with your changed files. Then choose **one** of these four examples while on `main`:
+
+**1. Tests only**
+
+```powershell
+git commit -m "Check document parsing [test]"
+git push origin main
 ```
 
-A failed job blocks downstream publication and deployment. Images receive `sha-<commit>` and `latest` tags; `latest` identifies the latest published image, not necessarily a successful cloud deployment.
+**2. Tests and Docker build checks**
 
-FastAPI Cloud builds uploaded source separately. This workflow does not deploy the Docker Hub image to FastAPI Cloud. Docker Desktop is not required on the local machine.
+```powershell
+git commit -m "Verify container changes [build]"
+git push origin main
+```
+
+**3. Full release**
+
+```powershell
+git commit -m "Release document improvements [deploy]"
+git push origin main
+```
+
+**4. Explicitly request all three**
+
+```powershell
+git commit -m "Release current version [test] [build] [deploy]"
+git push origin main
+```
+
+An ordinary commit without any marker keeps the default test-and-build behavior without publication or deployment. If the code is already committed, an empty commit can request a release:
+
+```powershell
+git commit --allow-empty -m "Deploy current version [deploy]"
+git push origin main
+```
+
+Only the **head (latest) commit message of the push** is checked, including its body. Markers in earlier commits in the same push do not determine the selected stages. Matching is case-insensitive. For a merge or squash, put the desired markers in the final merge or squash commit message. Deployment still requires every preceding check to pass.
+
+Keep FastAPI Cloud's separate automatic source-repository deployment disconnected so ordinary pushes cannot bypass this opt-in rule. These markers control the GitHub workflow; they do not disable independently configured deployment triggers.
 
 ### Deployment configuration
 
@@ -328,7 +370,7 @@ The workflow publishes to `<Docker Hub username>/rag-knowledge-assistant`; creat
 
 Keep deployment credentials in GitHub secrets and runtime credentials in the hosting environment. Do not paste real values into YAML, source files, examples, or documentation.
 
-After reviewing and committing changes, push to `main` or merge a checked pull request. Monitor GitHub Actions, then verify the live health endpoint, uploads, and chat for both providers.
+After reviewing changes, push to `main` or merge a checked pull request. Include `[deploy]` in the final commit message only when a release is intended. Monitor GitHub Actions; after a release, verify the live health endpoint, uploads, and chat for both providers.
 
 ## Operational considerations
 
