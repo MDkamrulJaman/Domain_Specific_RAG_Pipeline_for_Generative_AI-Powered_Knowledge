@@ -47,7 +47,7 @@ def provider_panel(provider, receipts):
     config = provider_configuration(provider)
     is_nvidia = provider == "nvidia"
     note = ("Your NVIDIA uploads from this session. Existing indexed documents remain searchable."
-            if is_nvidia else "Assistant searches its separate file library. Refresh to check processing status.")
+            if is_nvidia else "Assistant searches its separate file library. File status reloads when you select a provider.")
     return (
         status_markdown(config), gr.update(visible=is_nvidia),
         gr.update(value=config["enable_thinking"]),
@@ -55,7 +55,6 @@ def provider_panel(provider, receipts):
         library_rows(provider, receipts), note,
         f"Files upload only to {PROVIDER_LABELS[provider]}.",
         f"{PROVIDER_LABELS[provider]} - Ready" if config["configured"] else f"{PROVIDER_LABELS[provider]} - Setup required",
-        gr.update(visible=is_nvidia),
     )
 
 
@@ -74,15 +73,19 @@ def refresh_provider(provider, receipts):
     return status_markdown(config), updated, library_rows(provider, updated)
 
 
-def rag_answer(message, _history, provider="pinecone", top_k=5, enable_thinking=False, skill="general"):
+def rag_answer(message, _history, provider="pinecone", top_k=None, enable_thinking=False, web_search=False):
     label = PROVIDER_LABELS[provider]
     if not message or not message.strip():
         yield "Please enter a question about your documents.", f"{label} · No question submitted"
         return
     try:
-        request = ChatRequest(query=message, provider=provider, top_k=None if top_k is None or top_k == "auto" else int(top_k), enable_thinking=enable_thinking, skill=skill)
+        request = ChatRequest(query=message, provider=provider, top_k=None if top_k is None or top_k == "auto" else int(top_k), enable_thinking=enable_thinking, web_search=web_search)
     except (ValidationError, ValueError):
-        yield "Enter a question of up to 12,000 characters, a valid retrieval count, and a supported skill.", f"{label} · Invalid request"
+        yield "Enter a question of up to 12,000 characters, a valid retrieval count.", f"{label} · Invalid request"
+        return
+    command = AnswerCommand.from_request(request)
+    if command.local_reply is not None:
+        yield command.local_reply, "Ready for your next question."
         return
     message = request.query
     answer = ""
@@ -92,7 +95,7 @@ def rag_answer(message, _history, provider="pinecone", top_k=5, enable_thinking=
     try:
         service = get_chat_service(provider)
         # Use the same Command as the API so provider options cannot drift.
-        for fragment in AnswerCommand.from_request(request).execute(service):
+        for fragment in command.execute(service):
             if not fragment:
                 continue
             elapsed = time.perf_counter() - started
@@ -139,6 +142,6 @@ async def ingest_file(file_path, receipts=None, provider="pinecone", progress=gr
         return str(exc.detail), updated, library_rows(provider, updated)
     except Exception:
         logger.exception("Document upload failed")
-        return "Upload failed. Check the provider connection, then refresh the library before retrying.", updated, library_rows(provider, updated)
+        return "Upload failed. Check the provider connection, then select the provider again before retrying.", updated, library_rows(provider, updated)
 
 

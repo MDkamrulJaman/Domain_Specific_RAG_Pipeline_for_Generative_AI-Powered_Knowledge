@@ -11,6 +11,7 @@ dependencies = [
     "pydantic",
     "pydantic-settings",
     "openai",
+    "httpx",
     "pinecone>=10.0.0,<11",
     "huggingface-hub",
     "numpy",

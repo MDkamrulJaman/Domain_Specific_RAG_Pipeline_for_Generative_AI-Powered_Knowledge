@@ -14,7 +14,7 @@ def test_assistant_factory_never_initializes_vector_store(monkeypatch):
     vector = Mock(side_effect=AssertionError("Assistant must not retrieve from rag"))
     monkeypatch.setattr(provider_service, "get_vectorstore", vector)
     service = Mock()
-    monkeypatch.setattr(assistant_service, "AssistantService", lambda: service)
+    monkeypatch.setattr(assistant_service, "AssistantService", lambda **kwargs: service)
     assert provider_service.get_chat_service("pinecone") is service
     vector.assert_not_called()
     provider_service.get_chat_service.cache_clear()

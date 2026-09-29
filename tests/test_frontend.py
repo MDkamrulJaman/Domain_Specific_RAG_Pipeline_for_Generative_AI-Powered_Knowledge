@@ -94,3 +94,18 @@ def test_suggestions_submit_using_live_provider_controls():
     assert interface._additional_inputs_in_examples is False
     assert interface.additional_inputs[0].label == "Answer provider"
     assert interface.additional_inputs[0].value == "pinecone"
+
+
+def test_provider_change_automatically_refreshes_without_button():
+    from app.ui.frontend import create_demo
+    from app.ui.handlers import refresh_provider
+    demo = create_demo()
+    assert not any(getattr(block, "value", None) == "Refresh connection & files"
+                   for block in demo.blocks.values() if isinstance(getattr(block, "value", None), str))
+    provider = next(b for b in demo.blocks.values() if getattr(b, "label", None) == "Answer provider")
+    change = next(fn for fn in demo.fns.values() if (provider._id, "change") in fn.targets)
+    panel = next(fn for fn in demo.fns.values() if fn.trigger_after == change._id)
+    refresh = next(fn for fn in demo.fns.values() if fn.trigger_after == panel._id)
+    assert refresh.fn is refresh_provider
+    assert refresh.inputs[0] is provider
+    assert any(getattr(output, "elem_id", None) == "document-library" for output in refresh.outputs)

@@ -22,12 +22,16 @@ def get_vectorstore():
 def _nvidia_chat():
     from app.services.llm_service import LLMService
     from app.services.rag_service import RAGService
-    return RAGService(vectorstore=get_vectorstore(), llm=LLMService())
+    from app.services.web_search import TavilySearchAdapter
+    llm = LLMService()
+    return RAGService(vectorstore=get_vectorstore(), llm=llm,
+                      web_search_tool=TavilySearchAdapter())
 
 
 def _assistant_chat():
     from app.services.assistant_service import AssistantService
-    return AssistantService()
+    from app.services.web_search import TavilySearchAdapter
+    return AssistantService(web_search_tool=TavilySearchAdapter())
 
 
 def _nvidia_upload(filename, content, progress):

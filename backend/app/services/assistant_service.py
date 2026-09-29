@@ -8,30 +8,62 @@ from app.core.config import AssistantSettings
 # Adapter: expose Assistant SDK operations through application-facing methods.
 class AssistantService:
     """Assistant uses its own uploaded file library, independently of rag."""
-    def __init__(self, settings=None, client=None):
+    def __init__(self, settings=None, client=None, web_search_tool=None):
+        self.web_search_tool = web_search_tool
         settings = settings if settings is not None else AssistantSettings()
         self.client = client if client is not None else Pinecone(api_key=settings.PINECONE_ASSISTANT_API_KEY)
         self.name = settings.PINECONE_ASSISTANT_NAME
         self.model = settings.PINECONE_ASSISTANT_MODEL
         self.timeout = settings.PINECONE_ASSISTANT_TIMEOUT_SECONDS
 
-    def stream(self, query: str, top_k: int | None = 5, enable_thinking: bool | None = None):
+    def stream(self, query: str, top_k: int | None = 5, enable_thinking: bool | None = None, web_search: bool = False):
         if not query.strip():
             yield "Please provide a valid query."
             return
+        from app.services.web_search import web_context, source_links, source_excerpts
+        from app.services.answer_evidence import (
+            evidence_instruction, supported_stream, NO_DOCUMENT_ANSWER, NO_WEB_ANSWER,
+        )
+        no_files = False
         try:
-            response = self.client.assistants.chat(
-                assistant_name=self.name,
-                messages=[{"role": "user", "content": query}],
-                model=self.model, stream=True, timeout=self.timeout,
-            )
-            yield from response.text()
+            answered = yield from supported_stream(self._chat(
+                query + evidence_instruction("your uploaded document library")))
+            if answered:
+                return
         except ApiError as exc:
-            if "No files found" in str(exc):
-                raise HTTPException(409, "Assistant has no available files. Select Pinecone Assistant and upload a document, "
-                                    "then refresh until Assistant files are Available. Existing rag "
-                                    "index documents are not automatically in Assistant.") from exc
-            raise
+            if "No files found" not in str(exc):
+                raise
+            no_files = True
+        if not web_search:
+            yield NO_DOCUMENT_ANSWER
+            return
+        if self.web_search_tool is None:
+            raise HTTPException(503, "Web search is not configured.")
+        sources = self.web_search_tool.search(query)
+        if not sources:
+            yield NO_WEB_ANSWER
+            return
+        if no_files:
+            # Managed Assistant cannot generate without files. Never silently change providers.
+            yield "Assistant requires an available uploaded file to generate an answer. Public search excerpts (not a generated answer):\n\n"
+            yield source_excerpts(sources)
+            return
+        yield "*Documents do not contain the answer. Searching public sources.*\n\n"
+        answered = yield from supported_stream(self._chat(
+            web_context(query, sources) + evidence_instruction("the supplied web evidence")))
+        yield source_links(sources) if answered else NO_WEB_ANSWER
+
+    def _chat(self, query):
+        response = self.client.assistants.chat(
+            assistant_name=self.name, messages=[{"role": "user", "content": query}],
+            model=self.model, stream=True, timeout=self.timeout,
+        )
+        try:
+            yield from response.text()
+        finally:
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
 
     def upload(self, filename: str, content: bytes):
         with BytesIO(content) as stream:

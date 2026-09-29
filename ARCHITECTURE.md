@@ -31,14 +31,7 @@ inheritance hierarchy for providers with different capabilities.
   and executes against an injected chat receiver. HTTP and Gradio invoke the same
   command; schemas validate input and transports format errors.
 - **Prompt policy:** `services/prompts.py`.
-- **NVIDIA skills:** immutable task policies in `services/skills.py`; the API
-  accepts `skill`: `general`, `summarize`, `explain`, or `requirements`.
-  NVIDIA's frontend options expose the same policies. Pinecone ignores this
-  NVIDIA-only setting. Each skill limits context and output per request without
-  changing cached service settings. The configured model token limit remains
-  an upper bound. General answer keeps the existing generation budget.
-  Summaries cover retrieved passages only, not complete documents. Passage
-  labels refer to supplied context, not verified document/page citations.
+- **NVIDIA answering:** one generic grounded prompt; no task-specific skill routing.
 - **Index validation:** `pipeline/index_schema.py`; existing import locations
   remain compatible for callers.
 - **Application assembly:** `application.create_app(include_ui=False)` creates
@@ -101,7 +94,7 @@ corresponding GoF pattern.
 | Composite | Treat individual objects and nested groups uniformly through one interface.                         | **Not used in application logic.** Gradio supplies nested layouts, but the project has no custom leaf/container processing hierarchy. Consider it only if nested document collections need uniform operations.                                                    |
 | Decorator | Wrap an object with the same interface to add behavior without changing the wrapped implementation. | **Not used as a GoF object pattern.** Python `@lru_cache` and route decorators are language/framework decorators. A future metered `TextGenerator` wrapper could be a GoF Decorator if it preserves streaming and resource cleanup.                           |
 | Facade    | Offer a simpler entry point over a subsystem's several operations.                                  | **Used.** `provider_service` exposes construction, configuration, and readiness; `process_document` exposes validation and provider-specific ingestion. API/UI callers do not orchestrate SDK calls themselves.                                               |
-| Flyweight | Share intrinsic object state while passing per-use state separately to reduce memory.               | **Related idiom.** Frozen `Skill` policies are shared and request-specific choices remain separate. This is a small immutable registry, not a flyweight factory managing large numbers of fine-grained objects.                                                 |
+| Flyweight | Share intrinsic state between objects. | Not used as an application pattern. |
 | Proxy     | Stand in for another object and control access while preserving its interface.                      | **Not used.** Lazy factory construction and remote SDK calls do not make the application's wrappers a custom Proxy; those wrappers change interfaces and are Adapters. An access-control proxy would require a real identity/authorization design.                |
 
 ### Behavioral patterns (11)
@@ -109,14 +102,14 @@ corresponding GoF pattern.
 | Pattern                 | Plain-language meaning                                                                       | Status and project decision                                                                                                                                                                                                                              |
 | ----------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Chain of Responsibility | Pass a request through linked handlers until one handles it or the chain completes.          | **Not used.** Upload guards are sequential validation, not linked handler objects. A chain becomes useful only when independently configurable validation stages are needed.                                                                       |
-| Command                 | Package an action and its parameters so callers can invoke it independently of the receiver. | **Used.** Frozen `AnswerCommand` captures a validated request and exposes `execute(receiver)`. Both API and UI use it, centralizing NVIDIA skill forwarding. There is no implied undo, durable queue, or automatic retry.                      |
+| Command                 | Package an action and its parameters so callers can invoke it independently of the receiver. | **Used.** Frozen `AnswerCommand` captures a validated request and exposes `execute(receiver)`. Both API and UI use it, centralizing provider options. There is no implied undo, durable queue, or automatic retry.                      |
 | Interpreter             | Represent a language's grammar and evaluate expressions in that language.                    | **Not used.** Prompt strings and Pydantic validation are not a query-language interpreter. Introduce it only for a defined filter DSL with explicit syntax and execution rules.                                                                    |
 | Iterator                | Access items sequentially without exposing how the collection or stream is implemented.      | **Used through Python's iterator protocol.** Generators forward provider fragments through the RAG workflow and transports. Consumers receive text incrementally; `ask`/`generate` intentionally collect the stream for non-streaming callers. |
 | Mediator                | Centralize interactions among collaborating objects to reduce direct coupling.               | **Related idiom.** Gradio event wiring and UI handlers coordinate components, while indexing orchestrates pipeline stages. There is no dedicated GoF mediator object with colleague-to-mediator messaging.                                         |
 | Memento                 | Capture encapsulated object state so it can be restored later.                               | **Not used.** Receipts are copied before updates, but no restore/undo history exists. Never add rollback semantics that imply an external upload was reversed when it was not.                                                                     |
 | Observer                | Notify subscribed dependents when an object's state changes.                                 | **Related idiom.** Indexing emits progress through an injected callback and Gradio dispatches UI events. The application has no subject/subscriber collection or notification bus. A single callback meets the current requirement.                |
 | State                   | Delegate behavior to state objects as an object's state changes.                             | **Not used.** Provider status strings and UI readiness messages are data, not a State object hierarchy. Add a state machine if resumable ingestion gains explicit transition and recovery rules.                                                   |
-| Strategy                | Select interchangeable behavior behind a common contract.                                    | **Used.** The provider registry selects upload callables; RAG accepts interchangeable retrieval/generation capabilities. Skill policies supply task-specific data to a common prompt-building algorithm.                                           |
+| Strategy                | Select interchangeable behavior behind a common contract.                                    | **Used.** The provider registry selects upload callables; RAG accepts interchangeable retrieval/generation capabilities.                                           |
 | Template Method         | Define an algorithm in a base class and let subclasses override selected steps.              | **Not used.** `IndexingService` defines an ordered workflow but receives collaborators through composition. Constructor injection keeps those stages independently testable without inheritance.                                                 |
 | Visitor                 | Add operations across an object structure without changing its element classes.              | **Not used.** Documents currently pass through a small linear parsing/indexing workflow. A visitor would be justified by a heterogeneous document tree needing many separate operations.                                                           |
 
@@ -124,15 +117,14 @@ corresponding GoF pattern.
 
 ### One answer through the API or UI
 
-1. `ChatRequest` validates the provider, query, skill, and retrieval count.
+1. `ChatRequest` validates the provider, query, and retrieval count.
 2. The transport asks the provider-service facade for a receiver. Registered
    factory callables construct the adapter lazily and reuse it through a cache.
 3. `AnswerCommand.from_request` snapshots scalar request values. Later mutation
    of the Pydantic request cannot change this command.
-4. `AnswerCommand.execute(receiver)` passes NVIDIA skills only to the receiver
-   that supports them. General chat remains compatible with `ChatService`.
+4. `AnswerCommand.execute(receiver)` forwards request options through `ChatService`.
 5. NVIDIA's RAG workflow delegates retrieval and generation to injected
-   capabilities. Its automatic passage count comes from the chosen skill;
+   capabilities. Its default passage count is five;
    an explicit count overrides it. Context/output budgets remain bounded.
 6. Adapters translate the application's calls to provider SDK calls. Iterators
    carry response fragments back to the API/UI as they arrive.
@@ -140,7 +132,7 @@ corresponding GoF pattern.
    handling. Commands do not swallow provider failures or start new retries.
 
 Pinecone remains the default. Its Assistant workflow handles its own retrieval
-and does not use NVIDIA skill policies or the NVIDIA index pipeline.
+and does not use the NVIDIA index pipeline.
 
 ### One upload
 
@@ -172,10 +164,10 @@ a callback. This is composition and dependency inversion, not Template Method.
   and transports format responses. Pattern comments explain boundaries instead
   of repeating each line of code.
 - **OCP:** register a new provider capability without rewriting generic upload
-  validation. New public provider/skill names still require intentional schema
+  validation. New public provider names still require intentional schema
   and UI changes; open/closed does not mean every extension needs zero edits.
 - **LSP:** replacements must preserve signatures, iterator behavior, and expected
-  failure semantics. NVIDIA's optional skill interface extends basic chat;
+  failure semantics. The chat interface supports optional web fallback;
   it is not forced onto Assistant.
 - **ISP:** generation, retrieval, file upload, and vector writing remain separate
   protocols. No universal provider base class collects unrelated methods.
@@ -185,7 +177,7 @@ a callback. This is composition and dependency inversion, not Template Method.
 ## Validation and extension rules
 
 `test_chat_command.py` checks the command's request snapshot, receiver delegation,
-stream laziness, and error propagation. Existing API, frontend, skills, provider,
+stream laziness, and error propagation. Existing API, frontend, provider,
 and architecture tests protect the cross-layer behavior.
 
 Before introducing any currently unused pattern, identify a concrete requirement,
@@ -193,3 +185,15 @@ name the objects and responsibility it separates, and add a behavioral test for
 that requirement. Avoid pattern-only class hierarchies, transparent credential
 logging, or hidden retries of remote writes. A pattern is useful when it makes an
 actual change easier to understand, implement, or verify.
+
+
+## Document-first web fallback
+
+Both providers depend on an injected SearchTool adapter. A shared `answer_evidence.py` streaming gate uses the ordinary document-answer response to decide whether fallback is needed. It buffers only the possible opening control marker, forwards supported answers, and keeps transport errors distinct from insufficient evidence. Search runs only on an explicit unsupported verdict or empty retrieval and an enabled request flag. The selected provider then answers from web excerpts; no classifier model or implicit provider switch is introduced.
+
+This preserves single-purpose components, provider isolation, and Dependency Inversion. Document-first semantics intentionally replace concurrent document/web retrieval: no external query is sent for supported answers. The model's verdict is fallible and prompt adherence must be evaluated in deployment. README documents latency, privacy, Assistant's no-files limitation, and offline coverage.
+
+
+## Retained reference file
+
+`services/skills.py` is inactive and has no application importers. API schemas, commands, interfaces, UI, and prompts use generic answering. The question describes the task; retrieval defaults to five passages, and generic context/model limits remain bounded.

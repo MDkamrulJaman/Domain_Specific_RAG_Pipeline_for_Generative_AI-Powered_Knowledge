@@ -1,7 +1,6 @@
 """Gradio layout and event wiring. Request logic lives in handlers.py."""
 import gradio as gr
 from app.core.config import AppSettings
-from app.services.skills import SKILLS
 from app.services.provider_service import provider_configuration
 from app.ui.handlers import status_markdown, provider_panel, refresh_provider, rag_answer, ingest_file
 from app.ui.styles import CSS, HEADER, EMPTY_CHAT, INITIAL_THEME, TOGGLE_THEME, DARK_HEAD, build_theme
@@ -25,21 +24,13 @@ def create_demo():
                     value="pinecone", label="Answer provider",
                 )
                 connection_status = gr.Markdown(status_markdown(default), elem_id="provider-status")
-                refresh = gr.Button("Refresh connection & files")
-                top_k = gr.Dropdown(
-                    choices=[("Automatic (based on skill)", "auto")] + [(str(n), str(n)) for n in range(1, 21)],
-                    value="auto", label="NVIDIA retrieval depth", visible=False,
-                    info="Automatic: General 5, Explain 4, Summarize/Requirements 8 passages. Manual values override this. Assistant manages its own retrieval.",
-                )
+                # Internal state selects the default retrieval count.
+                top_k = gr.State(None)
                 with gr.Group(visible=False) as nvidia_options:
-                    skill = gr.Dropdown(
-                        choices=[(policy.label, name) for name, policy in SKILLS.items()],
-                        value="general", label="NVIDIA skill",
-                        info="Applies to your next question. Summaries cover retrieved passages only. Use General answer for longer responses.",
-                    )
                     thinking = gr.Checkbox(value=default["enable_thinking"], label="Enable NVIDIA thinking", info="Off for faster answers. On for additional reasoning.")
+                web_search = gr.Checkbox(value=False, label="Allow web search", info="Search the web only when documents cannot answer. Fallback sends your question to Tavily.")
                 gr.Markdown("### Document library")
-                library_note = gr.Markdown("Files upload to Pinecone Assistant. Refresh to check when processing is complete.")
+                library_note = gr.Markdown("Files upload to Pinecone Assistant. File status reloads when you select a provider.")
                 upload = gr.File(label=f"PDF or TXT · up to {limits.MAX_UPLOAD_MB} MB", elem_id="document-upload", file_types=[".pdf", ".txt"], type="filepath")
                 upload_button = gr.Button("Upload to Pinecone Assistant", variant="primary")
                 upload_status = gr.Markdown("Files upload only to Pinecone Assistant. Wait until their status is Available before chatting.")
@@ -50,7 +41,7 @@ def create_demo():
                 response_status = gr.Markdown("Pinecone Assistant - Ready" if default["configured"] else "Pinecone Assistant - Setup required", elem_id="response-status")
                 chat_interface = gr.ChatInterface(
                     fn=rag_answer, chatbot=chatbot,
-                    additional_inputs=[provider, top_k, thinking, skill],
+                    additional_inputs=[provider, top_k, thinking, web_search],
                     additional_outputs=[response_status],
                     # Message-only examples retain the current provider and controls.
                     examples=[["Summarize the key points"], ["Explain a technical concept"],
@@ -62,25 +53,31 @@ def create_demo():
                 gr.Markdown("NVIDIA retrieves from the Pinecone index; Assistant retrieves from its own uploaded files. Each question is independent.")
                 gr.HTML('<a href="/docs" target="_blank">API documentation</a> · <a href="/health" target="_blank">System health</a>')
         # Event wiring coordinates views; Gradio supplies event dispatch.
-        provider.change(
-            provider_panel, inputs=[provider, receipts],
-            outputs=[connection_status, nvidia_options, thinking, upload_button, library, library_note, upload_status, response_status, top_k],
-        )
         chat_interface.textbox.stop(
             lambda: "Response stopped. Partial answer kept.", outputs=response_status, queue=False,
         )
         chatbot.clear(lambda: "Ready for a new question.", outputs=response_status, queue=False)
         # Serialize library updates while an upload or refresh is running.
-        busy_controls = [provider, refresh, upload_button]
+        busy_controls = [provider, upload_button]
         def lock_controls():
             return [gr.update(interactive=False) for _ in busy_controls]
         def unlock_controls():
             return [gr.update(interactive=True) for _ in busy_controls]
-        refresh.click(lock_controls, outputs=busy_controls, queue=False).then(
+        # Lock selection until its remote status completes so stale results cannot
+        # overwrite the next provider's library. Construction itself stays offline.
+        provider.change(lock_controls, outputs=busy_controls, queue=False).then(
+            provider_panel, inputs=[provider, receipts],
+            outputs=[connection_status, nvidia_options, thinking, upload_button, library, library_note, upload_status, response_status],
+        ).then(
+            refresh_provider, inputs=[provider, receipts], outputs=[connection_status, receipts, library],
+        ).then(unlock_controls, outputs=busy_controls, queue=False)
+        demo.load(lock_controls, outputs=busy_controls, queue=False).then(
             refresh_provider, inputs=[provider, receipts], outputs=[connection_status, receipts, library],
         ).then(unlock_controls, outputs=busy_controls, queue=False)
         upload_button.click(lock_controls, outputs=busy_controls, queue=False).then(
             ingest_file, inputs=[upload, receipts, provider], outputs=[upload_status, receipts, library],
+        ).then(
+            refresh_provider, inputs=[provider, receipts], outputs=[connection_status, receipts, library],
         ).then(unlock_controls, outputs=busy_controls, queue=False)
     demo.queue(max_size=limits.UI_QUEUE_SIZE, default_concurrency_limit=limits.UI_CONCURRENCY)
     return demo

@@ -11,9 +11,17 @@ from app.api.routes.chat import chat_router
 from app.api.routes.ingest import ingest_router
 
 
+
 @pytest.fixture
 def client():
-    """A lightweight API client for chat and upload endpoint tests."""
+    """Provide an in-process test client for isolated API endpoint tests.
+
+    This fixture is used instead of starting a real server, making tests faster
+    and deterministic. It also provides a suitable boundary for mocking
+    external dependencies—such as LLM providers, vector stores, or file
+    storage—so tests can verify application behavior without network calls,
+    credentials, side effects, or reliance on external service availability.
+    """
     app = FastAPI()
     app.include_router(chat_router)
     app.include_router(ingest_router)

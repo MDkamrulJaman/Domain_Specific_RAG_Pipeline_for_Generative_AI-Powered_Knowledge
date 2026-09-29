@@ -1,6 +1,8 @@
 import logging
 import time
-from openai import OpenAI
+from openai import OpenAI, APITimeoutError
+import httpx
+from fastapi import HTTPException
 from app.core.config import NvidiaSettings
 
 logger = logging.getLogger(__name__)
@@ -14,13 +16,30 @@ class LLMService:
             base_url=self.settings.MODEL_BASE_URL,
             api_key=self.settings.MODEL_API_KEY,
             timeout=self.settings.MODEL_TIMEOUT_SECONDS,
+            max_retries=self.settings.MODEL_MAX_RETRIES,
         )
 
     def stream(self, prompt: str, enable_thinking: bool | None = None,
                max_tokens: int | None = None):
+        started = time.perf_counter()
+        # Cover both initial request and mid-stream idle timeouts, preserving partial output.
+        try:
+            yield from self._stream(prompt, enable_thinking, max_tokens)
+        except (APITimeoutError, httpx.TimeoutException) as exc:
+            # Log only the exception class, never exception text or request headers.
+            cause = exc.__cause__ if exc.__cause__ is not None else exc
+            logger.warning("NVIDIA request timed out after %.2f seconds (transport=%s)",
+                           time.perf_counter() - started, type(cause).__name__)
+            raise HTTPException(504, "NVIDIA did not respond within the configured network timeout after any configured retries. Try again or select Pinecone Assistant.") from None
+
+    def _stream(self, prompt: str, enable_thinking: bool | None = None,
+               max_tokens: int | None = None):
         if not prompt.strip():
             return
         start = time.perf_counter()
+        logger.info("NVIDIA generation request starting (model=%s; thinking=%s)",
+                    self.settings.MODEL_NAME,
+                    self.settings.MODEL_ENABLE_THINKING if enable_thinking is None else enable_thinking)
         response = self.client.chat.completions.create(
             model=self.settings.MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
@@ -34,6 +53,7 @@ class LLMService:
             }},
             stream=True,
         )
+        logger.info("NVIDIA response headers received in %.2f seconds", time.perf_counter() - start)
         first_token = None
         finish_reason = None
         try:

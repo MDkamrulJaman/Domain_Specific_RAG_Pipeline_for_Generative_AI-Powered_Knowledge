@@ -13,7 +13,7 @@ client and disables Gradio analytics.
 | `test_provider_service.py` | Provider construction, configuration, credential isolation, status |
 | `test_assistant_service.py` | Assistant chat parameters and file processing |
 | `test_nvidia_generation.py` | First-token streaming, prompt context, output limits |
-| `test_nvidia_skills.py` | Skill routing, prompt budgets, token limits, provider isolation, UI controls |
+| `test_rag_options.py` | Generic retrieval defaults, prompt budgets, token limits, and request contracts |
 | `test_ingestion_service.py` | Ingestion stages, provider isolation, early validation |
 | `test_vector_retrieval.py` | Hugging Face vectors and Pinecone integrated text search |
 | `test_index_schema.py` | Supported schemas, vector dimensions, SDK compatibility |

@@ -65,3 +65,45 @@ def test_nvidia_prompt_deduplicates_context_and_requests_concise_answer():
     assert prompt.count("unique source") == 1
     assert "second source" in prompt and "150 words" in prompt
     assert "question explicitly requests" in prompt
+
+
+def test_document_request_preserves_pre_search_generation_parameters():
+    """Guard the request shape used before web search; no provider call is made."""
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from app.services.llm_service import LLMService
+    settings = SimpleNamespace(MODEL_NAME="test-model", MODEL_TEMPERATURE=1.0,
+        MODEL_TOP_P=0.95, MODEL_MAX_TOKENS=1024, MODEL_ENABLE_THINKING=False)
+    response = Mock()
+    response.__iter__ = Mock(return_value=iter([]))
+    client = Mock()
+    client.chat.completions.create.return_value = response
+    list(LLMService(settings, client).stream("document question"))
+    client.chat.completions.create.assert_called_once_with(
+        model="test-model", messages=[{"role": "user", "content": "document question"}],
+        temperature=1.0, top_p=0.95, max_tokens=1024,
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}}, stream=True)
+    response.close.assert_called_once()
+
+
+def test_timeout_sends_only_one_http_request_by_default():
+    """Exercise the real SDK retry policy with a local fake transport, not NVIDIA."""
+    import httpx
+    import pytest
+    from openai import OpenAI
+    from fastapi import HTTPException
+    from app.core.config import NvidiaSettings
+    settings = NvidiaSettings(_env_file=None, MODEL_BASE_URL="https://example.invalid/v1",
+        MODEL_API_KEY="offline-placeholder", MODEL_NAME="test", MODEL_TIMEOUT_SECONDS=30,
+        MODEL_TEMPERATURE=1, MODEL_TOP_P=0.95, MODEL_MAX_TOKENS=1024)
+    requests = []
+    def timeout(request):
+        requests.append(request)
+        raise httpx.ReadTimeout("simulated timeout", request=request)
+    with httpx.Client(transport=httpx.MockTransport(timeout)) as http:
+        with OpenAI(api_key="offline-placeholder", base_url=settings.MODEL_BASE_URL,
+                    http_client=http, max_retries=settings.MODEL_MAX_RETRIES) as client:
+            with pytest.raises(HTTPException) as error:
+                list(LLMService(settings, client).stream("question"))
+    assert error.value.status_code == 504
+    assert len(requests) == 1

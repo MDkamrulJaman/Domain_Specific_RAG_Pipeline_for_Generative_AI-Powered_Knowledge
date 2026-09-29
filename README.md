@@ -2,7 +2,7 @@
 
 A retrieval-augmented generation (RAG) application for asking questions about technical documents. FastAPI provides the API, Gradio provides the browser workspace, and hosted AI services provide retrieval and generation.
 
-**Pinecone Assistant is the default provider.** Users can switch to NVIDIA for a configurable retrieval workflow and task-specific answer skills. The interface starts in dark mode.
+**Pinecone Assistant is the default provider.** Users can switch to NVIDIA for a configurable retrieval workflow. The interface starts in dark mode.
 
 ## Contents
 
@@ -13,7 +13,7 @@ A retrieval-augmented generation (RAG) application for asking questions about te
 - [Local setup](#local-setup)
 - [Configuration](#configuration)
 - [Using the workspace](#using-the-workspace)
-- [NVIDIA skills](#nvidia-skills)
+- [NVIDIA answering](#nvidia-answering)
 - [API reference](#api-reference)
 - [Testing](#testing)
 - [Docker and CI/CD](#docker-and-cicd)
@@ -26,7 +26,6 @@ A retrieval-augmented generation (RAG) application for asking questions about te
 - PDF and TXT uploads with configurable size validation.
 - Provider-specific uploads, chat, connection checks, and library views.
 - Streamed answers with first-token and elapsed-time feedback.
-- NVIDIA skills for summaries, explanations, and requirement extraction.
 - Responsive Gradio workspace with dark/light themes and clickable question suggestions.
 - Lazy provider construction and cached service clients.
 - Separate API, application services, provider adapters, and document-processing modules.
@@ -42,7 +41,6 @@ The application calls hosted models; it does not download or run NVIDIA model we
 | Parsing and retrieval | Managed by Assistant                 | Application parsing/chunking plus index search                   |
 | Embeddings            | Managed by Assistant                 | Pinecone integrated embeddings or hosted Hugging Face embeddings |
 | Answer generation     | Assistant chat API                   | NVIDIA API through an OpenAI-compatible client                   |
-| Task skills           | Assistant's existing behavior        | General, summarize, explain, requirements                        |
 | Library display       | Remote Assistant files after refresh | Upload receipts from the current UI session                      |
 
 ### Pinecone Assistant
@@ -60,7 +58,7 @@ Wait for uploaded files to become available before asking questions. Use **Refre
 PDF/TXT -> validate -> extract text -> split into chunks
     -> integrated text records OR Hugging Face vectors -> Pinecone index
 
-Question -> index search -> optional reranking -> grounded skill prompt
+Question -> index search -> optional reranking -> grounded answer prompt
     -> NVIDIA generation -> streamed answer
 ```
 
@@ -111,7 +109,7 @@ Python `__init__.py` files establish packages or expose public imports. Local `.
 | `api/routes/chat.py`           | Validates chat requests and returns streamed text                  |
 | `api/routes/ingest.py`         | Accepts multipart uploads, bounds reads, and closes uploaded files |
 | `api/routes/providers.py`      | Reports configuration or explicitly checks remote connectivity     |
-| `schemas/chat.py`              | Validates provider, question, retrieval count, and NVIDIA skill    |
+| `schemas/chat.py`              | Validates provider, question, retrieval count                      |
 | `schemas/ingest.py`            | Defines ingestion data models                                      |
 
 ### Services
@@ -127,7 +125,7 @@ Python `__init__.py` files establish packages or expose public imports. Local `.
 | `ingestion_service.py` | Validates uploads and dispatches to the selected provider              |
 | `indexing_service.py`  | Coordinates loader, chunker, optional embedder, and index writer       |
 | `prompts.py`           | Builds grounded prompts with deduplicated passages                     |
-| `skills.py`            | Defines NVIDIA task instructions and per-request budgets               |
+| `skills.py`            | Inactive reference; unused by the application                          |
 
 The shared `services/chat_command.py` module implements an immutable answer Command used by both HTTP and Gradio. See [the full GoF pattern catalog](ARCHITECTURE.md#design-pattern-policy) for all 23 patterns, their applicability, and the preserved SOLID boundaries.
 
@@ -205,44 +203,17 @@ Keep `backend/requirements.txt` and `backend/pyproject.toml` dependency declarat
 3. Upload a PDF or TXT file to the selected provider.
 4. For Assistant, wait for processing to finish. For NVIDIA, wait for indexing to complete.
 5. Enter a question or click a suggested question to submit it.
-6. For NVIDIA, optionally select a skill, retrieval count, and thinking mode.
+6. For NVIDIA, five passages are retrieved automatically; thinking mode remains optional.
 
 Switching providers changes the destination for subsequent operations. Questions are independent: visible chat history is not sent as conversational context to either provider.
 
-## NVIDIA skills
+## NVIDIA answering
 
-Select a skill under NVIDIA options or send its value in the API request.
+Questions go directly into the grounded answer prompt. The frontend retrieves up to five passages automatically; API clients can override `top_k` (1-50), with null selecting five. Assistant manages its own retrieval. Generic document context is bounded to 16,000 characters, and model output uses `MODEL_MAX_TOKENS`. Existing NVIDIA web-mode budgets still apply when web fallback is enabled.
 
-| API value        | Purpose                                                     | Maximum output tokens | Passage character budget |
-| ---------------- | ----------------------------------------------------------- | --------------------- | ------------------------ |
-| `general`      | General grounded answer                                     | `MODEL_MAX_TOKENS`  | 16,000                   |
-| `summarize`    | Up to five concise summary bullets                          | 512                   | 12,000                   |
-| `explain`      | Plain-language explanation and a supported example          | 768                   | 16,000                   |
-| `requirements` | Relevant requirements with wording and conditions preserved | 1,024                 | 20,000                   |
+`services/skills.py` is retained as an inactive reference file. Nothing in the application imports it. There is no skill field, routing, or task-specific policy in the API, UI, commands, prompts, or services. Summaries and explanations are requested through the question itself. Older clients sending an extra `skill` property receive the same generic behavior because unknown request properties are ignored.
 
-The configured `MODEL_MAX_TOKENS` remains an upper bound for every skill. Context budgets apply to passage text, not the entire prompt or its token count. Oversized passages are skipped rather than partially quoted. Skills preserve request-specific settings without changing cached clients. Pinecone Assistant ignores this NVIDIA-only option.
-
-Summaries cover retrieved passages, not entire documents. Passage labels such as `[1]` refer to the model's supplied context; they are not verified document/page citations. Instructions encourage grounded output but do not guarantee factual correctness.
-
-### Choosing retrieval depth
-
-`top_k` limits the number of passages returned for a question; it does not limit
-how many stored documents the index can search. A larger collection alone does
-not require a larger value. NVIDIA retrieves up to twice this count as candidates,
-deduplicates them, and reranks multiple results before building the prompt.
-
-The UI defaults to **Automatic (based on skill)**: General uses 5 passages,
-Explain uses 4, and Summarize/Requirements use 8. These are bounded starting
-policies, not a learned relevance threshold or a guarantee of optimal recall.
-Choose a manual value to override them. For API clients, `"top_k": null` selects
-Automatic; omitting the field keeps the existing default of 5 for compatibility.
-Pinecone Assistant manages retrieval independently.
-
-All NVIDIA skills now have passage-character budgets, including General at
-16,000 characters. The actual supplied context may contain fewer passages after
-deduplication and budgeting. Tune counts using representative questions: compare
-answer coverage, correctness, first-token latency, and total latency. Increasing
-a count can improve coverage but also increases reranking and prompt work.
+Passage labels identify supplied context, not verified page citations. Summaries cover retrieved passages, not necessarily the whole document.
 
 ## API reference
 
@@ -265,12 +236,11 @@ Example NVIDIA chat body:
   "query": "What startup requirements are stated in the documents?",
   "provider": "nvidia",
   "top_k": 5,
-  "enable_thinking": false,
-  "skill": "requirements"
+  "enable_thinking": false
 }
 ```
 
-Provider defaults to `pinecone`, skill to `general`, and retrieval count to `5`. Questions must be nonblank and at most 12,000 characters. API retrieval counts range from 1 to 50; the UI offers Automatic or manual values from 1 to 20. Streaming failures after headers are sent appear in the response body rather than changing the HTTP status.
+Provider defaults to `pinecone`, retrieval count to `5`. Questions must be nonblank and at most 12,000 characters. API retrieval counts range from 1 to 50; the frontend always uses the default retrieval count. Streaming failures after headers are sent appear in the response body rather than changing the HTTP status.
 
 ## Testing
 
@@ -278,11 +248,11 @@ From the repository root:
 
 ```powershell
 .\backend\.venv\Scripts\python.exe -m pytest -q
-.\backend\.venv\Scripts\python.exe -m pytest tests/test_nvidia_skills.py -v
+.\backend\.venv\Scripts\python.exe -m pytest tests/test_rag_options.py -v
 .\backend\.venv\Scripts\python.exe -m pip check
 ```
 
-`pytest.ini` selects `tests/` and adds `backend/` to the import path. Tests cover routing, upload limits and cleanup, provider isolation, retrieval modes, schema validation, streaming, skills, UI wiring, and dependency-injection contracts. External services are mocked, and API calls use an in-process test client.
+`pytest.ini` selects `tests/` and adds `backend/` to the import path. Tests cover routing, upload limits and cleanup, provider isolation, retrieval modes, schema validation, streaming, UI wiring, and dependency-injection contracts. External services are mocked, and API calls use an in-process test client.
 
 See [the test suite guide](tests/README.md) for the file-by-file map. Offline tests do not validate real provider responses, browser interaction, or production load. CI separately starts a container to check its health and frontend response.
 
@@ -378,7 +348,7 @@ After reviewing changes, push to `main` or merge a checked pull request. Include
 - Uploaded PDF parsing can consume more memory than the file size. The NVIDIA PDF loader extracts text but does not implement OCR for scanned images.
 - Gradio temporary uploads are eligible for cleanup after 24 hours, checked hourly. API document parsing uses in-memory content.
 - Provider clients are reused. Integrated index queries skip Hugging Face calls; single-result searches skip reranking. NVIDIA streams tokens and records timing information.
-- Skill output/context limits reduce request size; they do not guarantee faster hosted-model responses. No cross-request retrieval-result cache is implemented.
+- Output/context limits reduce request size; they do not guarantee faster hosted-model responses. No cross-request retrieval-result cache is implemented.
 - Hosting scale-to-zero can add cold-start latency. Check actual resource usage and provider latency under representative traffic.
 - Authentication, per-user library isolation, and distributed rate limiting are not implemented. Provider libraries are shared within the configured account/namespace. Protect public access and apply appropriate request limits before handling private documents.
 - Dependencies have compatibility ranges but are not fully locked. The Docker and cloud builds are separate, so exact dependency reproducibility is not guaranteed.
@@ -418,3 +388,43 @@ The [OpenAI Python SDK](https://github.com/openai/openai-python) provides the cl
 The delivery workflow uses GitHub Actions for automation, Docker and Docker Hub for container builds and image publication, and FastAPI Cloud for application hosting.
 
 Model selection is configurable. Credit for individual model weights belongs to their respective authors and publishers; consult the selected model's documentation for attribution and licensing details. These acknowledgments describe technology usage and do not imply sponsorship or endorsement.
+
+## Optional document-first web fallback
+
+Both providers first answer from their own document library. **Allow web search** is off by default. With it disabled, insufficient document evidence produces an explicit no-knowledge message. With it enabled, insufficient evidence triggers one Tavily search, followed by an answer from the selected provider with linked page titles. Empty or insufficient web evidence produces a no-answer message.
+
+The ordinary document-answer call is also the evidence decision: the prompt requests a private control marker only if evidence cannot answer the question. A bounded streaming gate suppresses that marker even across token boundaries; normal answers stream immediately once the marker is ruled out. There is no separate classifier call. A supported document answer makes one generation call and zero search calls; fallback with nonempty documents can make two generation calls. Empty NVIDIA retrieval skips the first generation. Timeouts, authentication failures, empty model streams, and malformed partial markers are errors, not fallback decisions.
+
+This is model-based evidence assessment, not proof of answerability. A model can miss evidence or fail to follow the marker instruction; a response without the marker or a recognized explicit refusal is treated as its document answer. Pinecone's managed instructions may also affect this behavior. Live provider validation has not been performed.
+
+Optional backend settings (use private environment values):
+
+```dotenv
+TAVILY_API_KEY=your-tavily-api-key
+WEB_SEARCH_MAX_RESULTS=3
+WEB_SEARCH_TIMEOUT_SECONDS=8
+MODEL_MAX_RETRIES=0
+NVIDIA_WEB_DOCUMENT_CHARS=6000
+NVIDIA_WEB_EXCERPT_CHARS=1000
+NVIDIA_WEB_MAX_TOKENS=512
+```
+
+API: `POST /api/chat/stream` with `{"query":"your question","provider":"pinecone","web_search":true}`. Use `nvidia` for NVIDIA generation. Tavily receives only the original question on fallback, not uploaded document contents. A question itself may contain private information. The LangChain Core tool performs one basic search with bounded excerpts and network timeout; no MCP server or background indexing is required. Document retrieval and web search are intentionally sequential to avoid unnecessary external requests.
+
+NVIDIA uses its configured web-mode evidence/output budgets when fallback is enabled. Its SDK retries default to zero for interactive chat. Setting `MODEL_MAX_RETRIES` to 1 or 2 explicitly opts in to additional attempts. Timeouts remain network-operation limits, not end-to-end deadlines. Increasing them allows longer waits rather than faster inference. On a timeout during web-answer generation, labelled search excerpts remain available. A document-answer timeout does not trigger search.
+
+Assistant requires an available uploaded file to generate. If it reports no files, web search can return labelled excerpts and links, but the app does not silently switch models. Search results are never uploaded to either library. Named links are drawn from the search response, with hostname fallback; they are not model-invented URLs.
+
+`answer_evidence.py` owns the shared streaming decision protocol. Provider services orchestrate document-first execution; `web_search.py` implements the LangChain search adapter and source formatting. Tests in `test_answer_evidence.py` cover both providers, marker fragmentation, opt-out, unsupported web evidence, and failures. `test_web_search.py` covers the tool and integration behavior.
+
+Credits: [Tavily search](https://docs.tavily.com/documentation/api-reference/endpoint/search), [LangChain StructuredTool](https://reference.langchain.com/python/langchain-core/tools/structured/StructuredTool), and [Pinecone Assistant](https://sdk.pinecone.io/python/how-to/assistant.html).
+
+### Automatic connection and library refresh
+
+The frontend has no **Refresh connection & files** button. It checks the selected provider and reloads its library when the page opens, when the answer provider changes, and after an upload. Provider selection and upload controls are temporarily disabled while these updates complete. Switching to NVIDIA preserves its session upload list; switching to Assistant loads its remote file list. Assistant processing is asynchronous: if a file is still Processing, select another provider and switch back later to reload its status. No periodic polling is performed.
+
+### Greetings and natural-language refusals
+
+Exact short greetings and acknowledgments (such as `hello`, `nice`, `good`, `wellcome`, or `thank you`) receive a local reply in the API and UI, even with search enabled. They do not initialize a provider or call retrieval/search. Messages containing a real question continue through the normal pipeline.
+
+The evidence gate also recognizes a small list of explicit leading refusals, including ?You did not provide enough information to answer this question?, across streaming chunks. These trigger the same conditional web fallback as the control marker. This is conservative phrase matching, not a universal language classifier; unfamiliar refusals may still require additional handling. Transport errors remain errors rather than search decisions.

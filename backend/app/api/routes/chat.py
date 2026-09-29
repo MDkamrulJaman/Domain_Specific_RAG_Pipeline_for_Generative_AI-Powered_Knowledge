@@ -25,7 +25,8 @@ def response_stream(service, req):
 @chat_router.post("/stream", summary="Stream an answer from NVIDIA or Pinecone Assistant")
 def stream_chat(req: ChatRequest):
     try:
-        service = get_chat_service(req.provider)
+        command = AnswerCommand.from_request(req)
+        service = None if command.local_reply is not None else get_chat_service(req.provider)
     except HTTPException:
         raise
     except Exception as exc:

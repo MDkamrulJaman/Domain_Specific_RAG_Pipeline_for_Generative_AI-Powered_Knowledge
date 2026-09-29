@@ -15,7 +15,8 @@ def test_assistant_chat_has_no_exclusion_filter(monkeypatch):
     service = assistant_service.AssistantService()
     assert list(service.stream("question")) == ["answer"]
     options = sdk.assistants.chat.call_args.kwargs
-    assert options["messages"] == [{"role":"user", "content":"question"}]
+    assert options["messages"][0]["content"].startswith("question")
+    assert "uploaded document library" in options["messages"][0]["content"]
     assert "filter" not in options
 
 

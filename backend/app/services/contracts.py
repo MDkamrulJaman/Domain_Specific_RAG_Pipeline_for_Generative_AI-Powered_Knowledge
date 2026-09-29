@@ -5,7 +5,6 @@ forces a chat model to implement uploading or vector operations.
 """
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any, Protocol
-from app.services.skills import SkillName
 
 Progress = Callable[[float, str], None]
 
@@ -16,17 +15,12 @@ def ignore_progress(fraction: float, message: str) -> None:
 
 class ChatService(Protocol):
     def stream(self, query: str, top_k: int | None = 5,
-               enable_thinking: bool | None = None) -> Iterator[str]: ...
+               enable_thinking: bool | None = None, web_search: bool = False) -> Iterator[str]: ...
 
 
 class TextGenerator(Protocol):
     def stream(self, prompt: str, enable_thinking: bool | None = None,
                max_tokens: int | None = None) -> Iterator[str]: ...
-
-
-class SkilledChatService(ChatService, Protocol):
-    def stream(self, query: str, top_k: int | None = 5, enable_thinking: bool | None = None,
-               skill: SkillName = "general") -> Iterator[str]: ...
 
 
 class Retriever(Protocol):
@@ -57,3 +51,7 @@ class FileLibrary(Protocol):
 
 class DocumentUploader(Protocol):
     def __call__(self, filename: str, content: bytes, progress: Progress) -> dict[str, Any]: ...
+
+
+class SearchTool(Protocol):
+    def search(self, query: str) -> list[dict[str, Any]]: ...
