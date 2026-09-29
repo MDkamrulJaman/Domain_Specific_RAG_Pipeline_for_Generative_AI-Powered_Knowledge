@@ -2,7 +2,7 @@
 
 A retrieval-augmented generation (RAG) application for asking questions about technical documents. FastAPI provides the API, Gradio provides the browser workspace, and hosted AI services provide retrieval and generation.
 
-**Pinecone Assistant is the default provider.** Users can switch to NVIDIA for a configurable retrieval workflow. The interface starts in dark mode.
+**Pinecone Assistant is the default provider.** Users can switch to NVIDIA for a configurable retrieval workflow. The interface starts in dark mode default.
 
 ## Contents
 
