@@ -64,19 +64,18 @@ def create_demo():
         )
         chatbot.clear(lambda: "Ready for a new question.", outputs=response_status, queue=False)
         # Serialize library updates while an upload or refresh is running.
-        busy_controls = [upload_button]
         def lock_controls():
-            return [gr.update(interactive=False) for _ in busy_controls]
+            return gr.update(interactive=False)
         def unlock_controls():
-            return [gr.update(interactive=True) for _ in busy_controls]
-        demo.load(lock_controls, outputs=busy_controls, queue=False).then(
+            return gr.update(interactive=True)
+        demo.load(lock_controls, outputs=upload_button, queue=False).then(
             refresh_provider, inputs=[provider, receipts], outputs=[connection_status, receipts, library],
-        ).then(unlock_controls, outputs=busy_controls, queue=False)
-        upload_button.click(lock_controls, outputs=busy_controls, queue=False).then(
+        ).then(unlock_controls, outputs=upload_button, queue=False)
+        upload_button.click(lock_controls, outputs=upload_button, queue=False).then(
             ingest_file, inputs=[upload, receipts, provider], outputs=[upload_status, receipts, library],
         ).then(
             refresh_provider, inputs=[provider, receipts], outputs=[connection_status, receipts, library],
-        ).then(unlock_controls, outputs=busy_controls, queue=False)
+        ).then(unlock_controls, outputs=upload_button, queue=False)
     demo.queue(max_size=limits.UI_QUEUE_SIZE, default_concurrency_limit=limits.UI_CONCURRENCY)
     return demo
 

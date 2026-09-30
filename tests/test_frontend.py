@@ -4,6 +4,37 @@ from unittest.mock import Mock
 import asyncio
 
 
+def test_upload_button_updates_interactivity_without_replacing_label():
+    from gradio.state_holder import SessionState
+    from app.ui.frontend import create_demo
+
+    demo = create_demo()
+    button = next(b for b in demo.blocks.values()
+                  if getattr(b, "value", None) == "Upload to Pinecone Assistant")
+    state = SessionState(demo)
+    callbacks = [fn for fn in demo.fns.values() if fn.outputs == [button]]
+    assert len(callbacks) == 4  # Lock/unlock on page load and upload.
+    for callback in callbacks:
+        result = asyncio.run(demo.postprocess_data(callback, callback.fn(), state))
+        assert result == [{"interactive": callback.fn.__name__ == "unlock_controls",
+                           "__type__": "update"}]
+        # No value is sent to the browser, so the existing label is preserved.
+        assert "value" not in result[0]
+
+
+def test_upload_without_file_preserves_library_and_skips_ingestion(monkeypatch):
+    from app.ui import handlers
+
+    process = Mock()
+    monkeypatch.setattr(handlers, "process_document", process)
+    original = {"shared": []}
+    message, receipts, rows = asyncio.run(handlers.ingest_file(None, original))
+    assert message == "Select a PDF or TXT file first."
+    assert receipts == original
+    assert rows == []
+    process.assert_not_called()
+
+
 def test_gradio_selector_and_streaming_callback(monkeypatch):
     from app.ui import handlers as frontend
     from app.ui.frontend import create_demo

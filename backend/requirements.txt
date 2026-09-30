@@ -1,10 +1,14 @@
+# Runtime dependencies; keep synchronized with pyproject.toml.
 fastapi[standard]
 uvicorn[standard]
-gradio>=6.26,<7
+agent-detector==2.0.0
+gradio
 python-multipart
 python-dotenv
 pydantic
 pydantic-settings
 httpx
-pinecone>=10.0.0,<11
+pinecone
 langchain-core
+langchain
+langchain-tavily
