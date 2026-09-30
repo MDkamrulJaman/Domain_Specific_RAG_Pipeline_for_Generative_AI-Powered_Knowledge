@@ -1,7 +1,7 @@
 # Runtime dependencies; keep synchronized with pyproject.toml.
 fastapi[standard]
 uvicorn[standard]
-agent-detector==2.0.0
+agent-detector
 gradio
 python-multipart
 python-dotenv
