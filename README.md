@@ -43,14 +43,14 @@ The application calls hosted services. It does not download model weights or run
 
 ### Pinecone Assistant
 
-| Stage | Responsibility |
-| --- | --- |
-| Upload validation | Application checks file extension, size, and nonempty content |
-| Document destination | Configured Assistant file library |
-| Document processing | Managed by Pinecone Assistant |
-| Retrieval and generation | Assistant chat API |
+| Stage                    | Responsibility                                                       |
+| ------------------------ | -------------------------------------------------------------------- |
+| Upload validation        | Application checks file extension, size, and nonempty content        |
+| Document destination     | Configured Assistant file library                                    |
+| Document processing      | Managed by Pinecone Assistant                                        |
+| Retrieval and generation | Assistant chat API                                                   |
 | Optional public evidence | Tavily search, only after an insufficient-document-evidence decision |
-| Library display | Remote Assistant filenames and processing status |
+| Library display          | Remote Assistant filenames and processing status                     |
 
 ```text
 PDF/TXT -> validate upload -> Assistant file library -> processing -> available
@@ -103,39 +103,39 @@ Python `__init__.py` files establish packages or expose public imports. Local `.
 
 ### API and schemas
 
-| Module                           | Responsibility                                                     |
-| -------------------------------- | ------------------------------------------------------------------ |
-| `api/app_router/app_router.py` | Composes routers; preserves legacy router aliases                  |
-| `api/routes/chat.py`           | Validates chat requests and returns streamed text                  |
-| `api/routes/ingest.py`         | Accepts multipart uploads, bounds reads, and closes uploaded files |
-| `api/routes/providers.py`      | Reports configuration or explicitly checks remote connectivity     |
-| `schemas/chat.py`              | Validates question, Pinecone provider, search option, and task policy                      |
-| `schemas/ingest.py`            | Legacy ingestion model; current upload route returns service result dictionaries                                      |
+| Module                           | Responsibility                                                                   |
+| -------------------------------- | -------------------------------------------------------------------------------- |
+| `api/app_router/app_router.py` | Composes routers; preserves legacy router aliases                                |
+| `api/routes/chat.py`           | Validates chat requests and returns streamed text                                |
+| `api/routes/ingest.py`         | Accepts multipart uploads, bounds reads, and closes uploaded files               |
+| `api/routes/providers.py`      | Reports configuration or explicitly checks remote connectivity                   |
+| `schemas/chat.py`              | Validates question, Pinecone provider, search option, and task policy            |
+| `schemas/ingest.py`            | Legacy ingestion model; current upload route returns service result dictionaries |
 
 ### Services
 
-| Module | Responsibility |
-| --- | --- |
-| `contracts.py` | Small protocols for streamed chat, file upload, upload dispatch, and search |
-| `provider_registry.py` | Provider capability definitions and lookup; only Pinecone is registered |
-| `provider_service.py` | Wires adapters, caches the Assistant service, and summarizes configuration/readiness |
+| Module                   | Responsibility                                                                         |
+| ------------------------ | -------------------------------------------------------------------------------------- |
+| `contracts.py`         | Small protocols for streamed chat, file upload, upload dispatch, and search            |
+| `provider_registry.py` | Provider capability definitions and lookup; only Pinecone is registered                |
+| `provider_service.py`  | Wires adapters, caches the Assistant service, and summarizes configuration/readiness   |
 | `assistant_service.py` | Managed chat, uploads, file listing, status, and document-first fallback orchestration |
-| `chat_command.py` | Immutable request Command shared by API and UI; handles exact social messages locally |
-| `ingestion_service.py` | Shared upload validation and dispatch to Assistant |
-| `skills.py` | Immutable task definitions and per-request grounding/formatting instructions |
-| `answer_evidence.py` | Bounded streaming gate for insufficient-evidence markers and recognized refusals |
-| `web_search.py` | LangChain Core Tavily adapter, bounded source excerpts, and safe named hyperlinks |
+| `chat_command.py`      | Immutable request Command shared by API and UI; handles exact social messages locally  |
+| `ingestion_service.py` | Shared upload validation and dispatch to Assistant                                     |
+| `skills.py`            | Immutable task definitions and per-request grounding/formatting instructions           |
+| `answer_evidence.py`   | Bounded streaming gate for insufficient-evidence markers and recognized refusals       |
+| `web_search.py`        | LangChain Core Tavily adapter, bounded source excerpts, and safe named hyperlinks      |
 
 ### Document pipeline and UI
 
 Document processing is managed remotely by Assistant. The earlier application-side loader, splitter, embedder, index schema checks, retrieval, and reranking modules are no longer active or included as implemented features. Remaining `pipeline/` package/scratch files do not participate in requests.
 
-| Module | Responsibility |
-| --- | --- |
+| Module             | Responsibility                                                                  |
+| ------------------ | ------------------------------------------------------------------------------- |
 | `ui/frontend.py` | Builds sidebar/chat components, native saved-history controls, and event wiring |
-| `ui/handlers.py` | Streams answers, handles uploads, and copies/refreshes library state |
-| `ui/styles.py` | Theme configuration, initial dark mode, and presentation assets |
-| `ui/theme.css` | Responsive workspace styling |
+| `ui/handlers.py` | Streams answers, handles uploads, and copies/refreshes library state            |
+| `ui/styles.py`   | Theme configuration, initial dark mode, and presentation assets                 |
+| `ui/theme.css`   | Responsive workspace styling                                                    |
 
 The `image/` folder contains project illustrations. Historical images may describe earlier designs; the current workflow is documented here and in `ARCHITECTURE.md`.
 
@@ -175,21 +175,21 @@ Open `http://127.0.0.1:8000/` for the workspace or `/docs` for interactive API d
 
 Settings load `backend/.env` independently of the current working directory. Process environment variables take precedence. Restart after changing Assistant settings because service instances are cached. Do not commit real credentials or place them in frontend components.
 
-| Required setting | Purpose |
-| --- | --- |
-| `PINECONE_ASSISTANT_API_KEY` | Credential authorized for the configured Assistant |
-| `PINECONE_ASSISTANT_NAME` | Name of the existing Assistant file library |
-| `PINECONE_ASSISTANT_MODEL` | Generation model supported by your Assistant configuration |
-| `PINECONE_ASSISTANT_TIMEOUT_SECONDS` | Timeout passed to Assistant chat requests |
+| Required setting                       | Purpose                                                    |
+| -------------------------------------- | ---------------------------------------------------------- |
+| `PINECONE_ASSISTANT_API_KEY`         | Credential authorized for the configured Assistant         |
+| `PINECONE_ASSISTANT_NAME`            | Name of the existing Assistant file library                |
+| `PINECONE_ASSISTANT_MODEL`           | Generation model supported by your Assistant configuration |
+| `PINECONE_ASSISTANT_TIMEOUT_SECONDS` | Timeout passed to Assistant chat requests                  |
 
-| Optional setting | Default | Meaning |
-| --- | --- | --- |
-| `TAVILY_API_KEY` | Empty | Required only when web fallback actually searches |
-| `WEB_SEARCH_MAX_RESULTS` | `3` | Search result limit, from 1 to 5 |
-| `WEB_SEARCH_TIMEOUT_SECONDS` | `8` | Search request timeout, from 1 to 30 seconds |
-| `MAX_UPLOAD_MB` | `5` | Upload limit, from 1 to 100; converted using 1024 x 1024 bytes |
-| `UI_QUEUE_SIZE` | `8` | Gradio queue capacity, from 1 to 1000 |
-| `UI_CONCURRENCY` | `1` | Gradio event concurrency, from 1 to 32 |
+| Optional setting               | Default | Meaning                                                        |
+| ------------------------------ | ------- | -------------------------------------------------------------- |
+| `TAVILY_API_KEY`             | Empty   | Required only when web fallback actually searches              |
+| `WEB_SEARCH_MAX_RESULTS`     | `3`   | Search result limit, from 1 to 5                               |
+| `WEB_SEARCH_TIMEOUT_SECONDS` | `8`   | Search request timeout, from 1 to 30 seconds                   |
+| `MAX_UPLOAD_MB`              | `5`   | Upload limit, from 1 to 100; converted using 1024 x 1024 bytes |
+| `UI_QUEUE_SIZE`              | `8`   | Gradio queue capacity, from 1 to 1000                          |
+| `UI_CONCURRENCY`             | `1`   | Gradio event concurrency, from 1 to 32                         |
 
 These are conservative defaults for a small hosting instance, not a guarantee of memory usage. UI concurrency does not limit direct API calls or guarantee a single in-flight operation across every event type. Hosted-model latency and provider quotas remain external constraints.
 
@@ -213,11 +213,11 @@ Each question is independent. Visible or restored chat history is not sent as co
 
 Assistant manages retrieval internally. The app sends the question, a request-scoped task policy, and evidence instructions; it does not set a custom `top_k`, reranker, local embedding model, or thinking switch.
 
-| Skill value | Sidebar label | Requested behavior |
-| --- | --- | --- |
-| `general` | General | Answer directly; expand when the question requires detail |
-| `summarize` | Summarize | Up to five bullets, preserving caveats and acknowledging limited evidence coverage |
-| `explain` | Explain | Clear explanation and essential details; examples only when supported |
+| Skill value      | Sidebar label     | Requested behavior                                                                   |
+| ---------------- | ----------------- | ------------------------------------------------------------------------------------ |
+| `general`      | General           | Answer directly; expand when the question requires detail                            |
+| `summarize`    | Summarize         | Up to five bullets, preserving caveats and acknowledging limited evidence coverage   |
+| `explain`      | Explain           | Clear explanation and essential details; examples only when supported                |
 | `requirements` | Find requirements | Preserve exact wording, identifiers, conditions, and mandatory/optional distinctions |
 
 All policies request grounded claims and available source citations, prohibit invented facts/URLs, and treat retrieved content as reference data rather than instructions. Insufficient-evidence handling takes precedence over formatting. Summaries cover retrieved evidence, not necessarily every page of every uploaded document.
@@ -367,21 +367,21 @@ After reviewing changes, push to `main` or merge a checked pull request. Include
 
 ## Troubleshooting
 
-| Symptom | Check |
-| --- | --- |
-| Assistant shows setup required | Required environment-variable names and values; restart after changes |
-| Connection fails | Assistant access, name, credentials, remote service availability, and network access |
-| Files remain Processing | Reload the page later; processing is remote and no periodic polling runs |
-| Document not found in answers | Confirm it is uploaded to the configured Assistant and available; another index/library is not searched |
-| Upload is rejected | PDF/TXT extension, nonempty bytes, and `MAX_UPLOAD_MB` |
-| Answer says knowledge is unavailable | Ask a more specific question, add relevant documents, or permit web fallback |
-| Search reports missing configuration | Set `TAVILY_API_KEY` privately and restart |
-| Only search excerpts appear | Assistant reported no files; upload an available file for generated answers |
-| An answer is slow | Compare first-token/total time and remote service status; fallback makes additional network calls |
-| Saved chat is missing on another device | History is browser-local, not synchronized to the backend |
-| CI dependency consistency fails | Match requirements and project dependency declarations |
-| Container job fails | Startup logs, dependency compatibility, health status, and frontend HTTP response |
-| Cloud deployment fails | Deployment secrets, token validity, application directory, and cloud build logs |
+| Symptom                                 | Check                                                                                                   |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Assistant shows setup required          | Required environment-variable names and values; restart after changes                                   |
+| Connection fails                        | Assistant access, name, credentials, remote service availability, and network access                    |
+| Files remain Processing                 | Reload the page later; processing is remote and no periodic polling runs                                |
+| Document not found in answers           | Confirm it is uploaded to the configured Assistant and available; another index/library is not searched |
+| Upload is rejected                      | PDF/TXT extension, nonempty bytes, and`MAX_UPLOAD_MB`                                                 |
+| Answer says knowledge is unavailable    | Ask a more specific question, add relevant documents, or permit web fallback                            |
+| Search reports missing configuration    | Set`TAVILY_API_KEY` privately and restart                                                             |
+| Only search excerpts appear             | Assistant reported no files; upload an available file for generated answers                             |
+| An answer is slow                       | Compare first-token/total time and remote service status; fallback makes additional network calls       |
+| Saved chat is missing on another device | History is browser-local, not synchronized to the backend                                               |
+| CI dependency consistency fails         | Match requirements and project dependency declarations                                                  |
+| Container job fails                     | Startup logs, dependency compatibility, health status, and frontend HTTP response                       |
+| Cloud deployment fails                  | Deployment secrets, token validity, application directory, and cloud build logs                         |
 
 This guide contains configuration names and generic examples only. Supply credentials privately in your own environment.
 
@@ -389,10 +389,10 @@ This guide contains configuration names and generic examples only. Supply creden
 
 This project acknowledges the API companies and maintainers whose services support its current implementation:
 
-| Provider | Contribution |
-| --- | --- |
+| Provider                            | Contribution                                                     |
+| ----------------------------------- | ---------------------------------------------------------------- |
 | [Pinecone](https://www.pinecone.io/) | Managed Assistant file library, retrieval, and answer generation |
-| [Tavily](https://tavily.com/) | Optional public web search when uploaded evidence cannot answer |
+| [Tavily](https://tavily.com/)        | Optional public web search when uploaded evidence cannot answer  |
 
 ### SDKs, frameworks, and delivery tools
 

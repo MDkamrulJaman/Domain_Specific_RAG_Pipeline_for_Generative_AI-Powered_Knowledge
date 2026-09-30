@@ -38,16 +38,16 @@ The diagram shows normal generation paths. Provider errors propagate to transpor
 
 ## Layers and module ownership
 
-| Layer | Modules | Owns | Does not own |
-| --- | --- | --- | --- |
-| Assembly | `main.py`, `application.py`, `api/app_router/` | Logging entry point, app factory, routing, health endpoint, UI mounting | Answer policies or SDK request details |
-| Transport | `api/routes/`, `schemas/chat.py` | Input validation, HTTP status, multipart file cleanup, streaming response formatting | Retrieval algorithms or provider construction |
-| Presentation | `ui/frontend.py`, `ui/handlers.py`, `ui/styles.py`, `ui/theme.css` | Components, events, visible timing, upload receipts, browser history wiring | Remote storage semantics or SDK implementation |
-| Use cases | `chat_command.py`, `ingestion_service.py`, `assistant_service.py` | Request execution, upload validation, document-first orchestration | Browser layout or HTTP response construction |
-| Policies | `skills.py`, `answer_evidence.py` | Request-scoped instructions and streaming evidence decisions | Credentials, search transport, global Assistant mutation |
-| Integration | `assistant_service.py`, `web_search.py` | SDK/HTTP translation, file operations, search result normalization | UI state or authentication policy |
-| Composition and contracts | `provider_service.py`, `provider_registry.py`, `contracts.py` | Lazy factories, capability lookup, injected interfaces, readiness summaries | Local inference or a universal provider base class |
-| Configuration | `core/config.py` | Assistant settings, optional search settings, upload/queue limits | User-specific persistent state |
+| Layer                     | Modules                                                                    | Owns                                                                                 | Does not own                                             |
+| ------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| Assembly                  | `main.py`, `application.py`, `api/app_router/`                       | Logging entry point, app factory, routing, health endpoint, UI mounting              | Answer policies or SDK request details                   |
+| Transport                 | `api/routes/`, `schemas/chat.py`                                       | Input validation, HTTP status, multipart file cleanup, streaming response formatting | Retrieval algorithms or provider construction            |
+| Presentation              | `ui/frontend.py`, `ui/handlers.py`, `ui/styles.py`, `ui/theme.css` | Components, events, visible timing, upload receipts, browser history wiring          | Remote storage semantics or SDK implementation           |
+| Use cases                 | `chat_command.py`, `ingestion_service.py`, `assistant_service.py`    | Request execution, upload validation, document-first orchestration                   | Browser layout or HTTP response construction             |
+| Policies                  | `skills.py`, `answer_evidence.py`                                      | Request-scoped instructions and streaming evidence decisions                         | Credentials, search transport, global Assistant mutation |
+| Integration               | `assistant_service.py`, `web_search.py`                                | SDK/HTTP translation, file operations, search result normalization                   | UI state or authentication policy                        |
+| Composition and contracts | `provider_service.py`, `provider_registry.py`, `contracts.py`        | Lazy factories, capability lookup, injected interfaces, readiness summaries          | Local inference or a universal provider base class       |
+| Configuration             | `core/config.py`                                                         | Assistant settings, optional search settings, upload/queue limits                    | User-specific persistent state                           |
 
 `AssistantService` currently combines managed SDK operations with the small document-first orchestration flow. This is a pragmatic boundary, not a claim of perfect layer isolation. If its responsibilities grow, extract the orchestration into an injected workflow while retaining a narrow SDK adapter.
 
@@ -89,15 +89,15 @@ Grounding and insufficient-evidence rules take precedence over formatting. Docum
 
 ## State, performance, and lifecycle
 
-| State/resource | Scope | Consequence |
-| --- | --- | --- |
-| Cached Assistant service | Process | Reuses clients; restart after relevant settings change; replicas have separate caches |
-| Task policy | Request | One question's instructions do not alter later requests |
-| Chat transcript | Browser local storage | No device synchronization or server-side conversational memory |
-| UI receipts | Gradio session state | Copied before updates; refreshed from remote file listing |
-| Document library | Configured Assistant | Shared by backend users; new chat is not a private library |
-| Search results | Fallback request | Bounded and transient; not inserted into the document library |
-| Queue/concurrency controls | Gradio process/events | Do not enforce a global limit across API traffic and replicas |
+| State/resource             | Scope                 | Consequence                                                                           |
+| -------------------------- | --------------------- | ------------------------------------------------------------------------------------- |
+| Cached Assistant service   | Process               | Reuses clients; restart after relevant settings change; replicas have separate caches |
+| Task policy                | Request               | One question's instructions do not alter later requests                               |
+| Chat transcript            | Browser local storage | No device synchronization or server-side conversational memory                        |
+| UI receipts                | Gradio session state  | Copied before updates; refreshed from remote file listing                             |
+| Document library           | Configured Assistant  | Shared by backend users; new chat is not a private library                            |
+| Search results             | Fallback request      | Bounded and transient; not inserted into the document library                         |
+| Queue/concurrency controls | Gradio process/events | Do not enforce a global limit across API traffic and replicas                         |
 
 Normal supported document answers use one generation call and no search. A fallback can add one search and a second generation call. Exact greetings avoid all remote calls. Generation streams and their underlying responses are closed in cleanup paths. No cross-request answer cache or distributed lock is implemented.
 
@@ -131,41 +131,41 @@ All **23 Gang of Four patterns** are cataloged below. Proper usage means selecti
 
 ### Creational patterns (5)
 
-| Pattern | Current usage/status | Appropriate use or reason to defer |
-| --- | --- | --- |
-| **Abstract Factory** | Not implemented. `ProviderDefinition` groups callables, but there is no abstract family-producing factory hierarchy. | Consider when several providers require coordinated chat, upload, and readiness adapters that must be created as compatible families. |
-| **Builder** | Not implemented as a GoF builder. `create_app` and `create_demo` are ordinary assembly functions. | Useful if many independently selectable application configurations make construction complex; current assembly functions are sufficient. |
-| **Factory Method** | Simple factories are used in `provider_service.py`; no subclass-overridden GoF Factory Method exists. | Keep callable factories for the current provider. Introduce the formal pattern only if creator subclasses need to control product creation. |
-| **Prototype** | Not implemented. `deepcopy` of UI receipts is defensive state copying, not a prototype registry. | Could fit user-defined reusable configuration templates; request data copying alone does not justify it. |
-| **Singleton** | Not enforced. `lru_cache(maxsize=1)` reuses a process-local service, but concurrent first calls can construct multiple instances. | Prefer injectable cached clients. Do not assume one object across workers, replicas, or tests. |
+| Pattern                    | Current usage/status                                                                                                               | Appropriate use or reason to defer                                                                                                          |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Abstract Factory** | Not implemented.`ProviderDefinition` groups callables, but there is no abstract family-producing factory hierarchy.              | Consider when several providers require coordinated chat, upload, and readiness adapters that must be created as compatible families.       |
+| **Builder**          | Not implemented as a GoF builder.`create_app` and `create_demo` are ordinary assembly functions.                               | Useful if many independently selectable application configurations make construction complex; current assembly functions are sufficient.    |
+| **Factory Method**   | Simple factories are used in`provider_service.py`; no subclass-overridden GoF Factory Method exists.                             | Keep callable factories for the current provider. Introduce the formal pattern only if creator subclasses need to control product creation. |
+| **Prototype**        | Not implemented.`deepcopy` of UI receipts is defensive state copying, not a prototype registry.                                  | Could fit user-defined reusable configuration templates; request data copying alone does not justify it.                                    |
+| **Singleton**        | Not enforced.`lru_cache(maxsize=1)` reuses a process-local service, but concurrent first calls can construct multiple instances. | Prefer injectable cached clients. Do not assume one object across workers, replicas, or tests.                                              |
 
 ### Structural patterns (7)
 
-| Pattern | Current usage/status | Appropriate use or reason to defer |
-| --- | --- | --- |
-| **Adapter** | Implemented by `AssistantService` and `TavilySearchAdapter`: external SDK/HTTP behavior is exposed as application chat/upload/search operations. | Keeps vendor details at integration boundaries and permits fake adapters in tests. |
-| **Bridge** | Not implemented. Protocols and dependency injection alone do not establish two independently varying class hierarchies. | Consider only if multiple abstraction families and provider implementations evolve independently. |
-| **Composite** | No application-domain Composite. Gradio owns the nested component/layout tree. | A uniform document-section or workspace-folder tree might justify it later; current files are a flat list. |
-| **Decorator** | Python route/cache decorators are used, but there is no GoF same-interface object-wrapper hierarchy. | A `ChatService` wrapper for measured timing, quotas, or auditing could preserve streaming while adding behavior. Test cancellation and errors before introducing one. |
-| **Facade** | `inspect_provider` offers one readiness operation over configuration, Assistant status, and file listing. | Callers receive a simple summary without coordinating several remote operations themselves. |
-| **Flyweight** | Not implemented. Shared immutable skill constants are a small value registry, not a large intrinsic/extrinsic-state object system. | Relevant only if large numbers of repeated immutable objects create measurable memory pressure. |
-| **Proxy** | Not implemented as a substitute object. Lazy factory construction is not itself a proxy. | A remote-access authorization or quota proxy may become useful with authenticated multi-user traffic. |
+| Pattern             | Current usage/status                                                                                                                                | Appropriate use or reason to defer                                                                                                                                     |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Adapter**   | Implemented by`AssistantService` and `TavilySearchAdapter`: external SDK/HTTP behavior is exposed as application chat/upload/search operations. | Keeps vendor details at integration boundaries and permits fake adapters in tests.                                                                                     |
+| **Bridge**    | Not implemented. Protocols and dependency injection alone do not establish two independently varying class hierarchies.                             | Consider only if multiple abstraction families and provider implementations evolve independently.                                                                      |
+| **Composite** | No application-domain Composite. Gradio owns the nested component/layout tree.                                                                      | A uniform document-section or workspace-folder tree might justify it later; current files are a flat list.                                                             |
+| **Decorator** | Python route/cache decorators are used, but there is no GoF same-interface object-wrapper hierarchy.                                                | A`ChatService` wrapper for measured timing, quotas, or auditing could preserve streaming while adding behavior. Test cancellation and errors before introducing one. |
+| **Facade**    | `inspect_provider` offers one readiness operation over configuration, Assistant status, and file listing.                                         | Callers receive a simple summary without coordinating several remote operations themselves.                                                                            |
+| **Flyweight** | Not implemented. Shared immutable skill constants are a small value registry, not a large intrinsic/extrinsic-state object system.                  | Relevant only if large numbers of repeated immutable objects create measurable memory pressure.                                                                        |
+| **Proxy**     | Not implemented as a substitute object. Lazy factory construction is not itself a proxy.                                                            | A remote-access authorization or quota proxy may become useful with authenticated multi-user traffic.                                                                  |
 
 ### Behavioral patterns (11)
 
-| Pattern | Current usage/status | Appropriate use or reason to defer |
-| --- | --- | --- |
-| **Chain of Responsibility** | Not implemented. Document-first fallback is an explicit conditional sequence, not a linked chain of interchangeable handlers. | Consider when several optional evidence sources require configurable ordering and stop conditions. |
-| **Command** | `AnswerCommand` captures validated request values and executes against an injected chat receiver. API and UI are invokers. | Centralizes option forwarding and local greetings. It does not implement undo, durable queues, or automatic retries. |
-| **Interpreter** | Not implemented. Skill enum validation and exact greeting matching are not a grammar evaluator. | Useful only if a real query/filter language with parsing and evaluation becomes a product requirement. |
-| **Iterator** | Python generator/iterator protocol delivers answer fragments through `stream`, `_chat`, and `supported_stream`. | Preserves lazy consumption and supports partial answers; no redundant custom iterator hierarchy is needed. |
-| **Mediator** | UI event wiring coordinates components, but there is no application Mediator object. | Extract one only if interactions between several independent views become too coupled for simple handlers. |
-| **Memento** | Not implemented as an originator/caretaker snapshot protocol. Saved transcripts and copied receipts are not undo states. | Could support reversible document/workspace editing; current chat-history persistence alone does not require it. |
-| **Observer** | Event subscription/dispatch is supplied by Gradio through load, click, clear, and other events. No custom observer system is implemented. | Use framework events for UI updates; introduce domain observers only for independent event subscribers. |
-| **State** | Not implemented as polymorphic state objects. File statuses and connection summaries are ordinary values. | A substantial upload lifecycle with legal transitions and state-specific behavior could justify it later. |
-| **Strategy** | Upload behavior is selected through injected registry callables. Only one production strategy is registered; tests substitute others. Skill policies are selected data, not separate algorithm classes. | Allows new upload implementations without rewriting validation. Avoid labeling every conditional or policy string a GoF strategy hierarchy. |
-| **Template Method** | Not implemented. Shared execution uses composition rather than base-class algorithms with overridable hooks. | Consider only when several implementations share a stable invariant algorithm; composition currently keeps adapters simpler. |
-| **Visitor** | Not implemented; there is no heterogeneous domain object tree to traverse with independent operations. | May fit future document AST analysis/export, but managed Assistant processing provides no such local tree today. |
+| Pattern                           | Current usage/status                                                                                                                                                                                    | Appropriate use or reason to defer                                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Chain of Responsibility** | Not implemented. Document-first fallback is an explicit conditional sequence, not a linked chain of interchangeable handlers.                                                                           | Consider when several optional evidence sources require configurable ordering and stop conditions.                                          |
+| **Command**                 | `AnswerCommand` captures validated request values and executes against an injected chat receiver. API and UI are invokers.                                                                            | Centralizes option forwarding and local greetings. It does not implement undo, durable queues, or automatic retries.                        |
+| **Interpreter**             | Not implemented. Skill enum validation and exact greeting matching are not a grammar evaluator.                                                                                                         | Useful only if a real query/filter language with parsing and evaluation becomes a product requirement.                                      |
+| **Iterator**                | Python generator/iterator protocol delivers answer fragments through`stream`, `_chat`, and `supported_stream`.                                                                                    | Preserves lazy consumption and supports partial answers; no redundant custom iterator hierarchy is needed.                                  |
+| **Mediator**                | UI event wiring coordinates components, but there is no application Mediator object.                                                                                                                    | Extract one only if interactions between several independent views become too coupled for simple handlers.                                  |
+| **Memento**                 | Not implemented as an originator/caretaker snapshot protocol. Saved transcripts and copied receipts are not undo states.                                                                                | Could support reversible document/workspace editing; current chat-history persistence alone does not require it.                            |
+| **Observer**                | Event subscription/dispatch is supplied by Gradio through load, click, clear, and other events. No custom observer system is implemented.                                                               | Use framework events for UI updates; introduce domain observers only for independent event subscribers.                                     |
+| **State**                   | Not implemented as polymorphic state objects. File statuses and connection summaries are ordinary values.                                                                                               | A substantial upload lifecycle with legal transitions and state-specific behavior could justify it later.                                   |
+| **Strategy**                | Upload behavior is selected through injected registry callables. Only one production strategy is registered; tests substitute others. Skill policies are selected data, not separate algorithm classes. | Allows new upload implementations without rewriting validation. Avoid labeling every conditional or policy string a GoF strategy hierarchy. |
+| **Template Method**         | Not implemented. Shared execution uses composition rather than base-class algorithms with overridable hooks.                                                                                            | Consider only when several implementations share a stable invariant algorithm; composition currently keeps adapters simpler.                |
+| **Visitor**                 | Not implemented; there is no heterogeneous domain object tree to traverse with independent operations.                                                                                                  | May fit future document AST analysis/export, but managed Assistant processing provides no such local tree today.                            |
 
 ## Failure handling and data boundaries
 
@@ -179,14 +179,14 @@ All **23 Gang of Four patterns** are cataloged below. Proper usage means selecti
 
 ## Testing and deployment
 
-| Test area | Evidence |
-| --- | --- |
-| Request/schema/API boundaries | Chat validation, upload limits, HTTP errors, file closure, provider rejection |
-| Assistant and policies | SDK request shape, streaming cleanup, file operations, per-request task isolation |
-| Evidence/search | Marker fragmentation, conservative refusal handling, opt-out, web fallback, source normalization, no fallback on timeout |
-| Shared command/contracts | Immutable snapshots, lazy iteration, option forwarding, fake service substitution |
-| UI | Sidebar controls, saved-history wiring, upload/library callbacks, initial theme |
-| Removal boundary | Only Pinecone registered; the removed LLM helper is absent and has no active importers |
+| Test area                     | Evidence                                                                                                                 |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Request/schema/API boundaries | Chat validation, upload limits, HTTP errors, file closure, provider rejection                                            |
+| Assistant and policies        | SDK request shape, streaming cleanup, file operations, per-request task isolation                                        |
+| Evidence/search               | Marker fragmentation, conservative refusal handling, opt-out, web fallback, source normalization, no fallback on timeout |
+| Shared command/contracts      | Immutable snapshots, lazy iteration, option forwarding, fake service substitution                                        |
+| UI                            | Sidebar controls, saved-history wiring, upload/library callbacks, initial theme                                          |
+| Removal boundary              | Only Pinecone registered; the removed LLM helper is absent and has no active importers                                   |
 
 The suite runs offline with mocks and in-process FastAPI TestClient calls. It does not verify live API credentials, provider latency, factual accuracy, full browser rendering, or production load. Detailed commands and file coverage are in [tests/README.md](tests/README.md).
 
