@@ -1,48 +1,29 @@
-# Test suite guide
+# Offline test suite
 
-Tests are grouped by the behavior they protect. External providers are mocked;
-no local server is started. `conftest.py` supplies the shared in-process API
-client and disables Gradio analytics.
-
-| File | What it verifies |
-| --- | --- |
-| `test_api_routes.py` | Router composition and exposed endpoints |
-| `test_chat_api.py` | Provider routing, streamed responses, errors, thinking options |
-| `test_upload_api.py` | Upload destination, default provider, size limits, file cleanup |
-| `test_chat_schema.py` | Request defaults, bounds, and invalid questions |
-| `test_provider_service.py` | Provider construction, configuration, credential isolation, status |
-| `test_assistant_service.py` | Assistant chat parameters and file processing |
-| `test_nvidia_generation.py` | First-token streaming, prompt context, output limits |
-| `test_rag_options.py` | Generic retrieval defaults, prompt budgets, token limits, and request contracts |
-| `test_ingestion_service.py` | Ingestion stages, provider isolation, early validation |
-| `test_vector_retrieval.py` | Hugging Face vectors and Pinecone integrated text search |
-| `test_index_schema.py` | Supported schemas, vector dimensions, SDK compatibility |
-| `test_frontend.py` | Provider selection, uploads, library refresh, dark theme |
-| `test_service_architecture.py` | Dependency injection, substitutable adapters, registry extension, app factory |
-| `test_document_loader.py` | Parsing consistency between disk and in-memory files |
-
-`test_chat_command.py` verifies immutable request snapshots, lazy receiver execution, error propagation, and Assistant capability isolation.
-
-## Running tests
-
-From the repository root, using the backend virtual environment:
+Run from the repository root:
 
 ```powershell
-# Complete suite
-backend/.venv/Scripts/python.exe -m pytest -q
-
-# One feature
-backend/.venv/Scripts/python.exe -m pytest tests/test_upload_api.py -v
-
-# One behavior
-backend/.venv/Scripts/python.exe -m pytest tests/test_nvidia_generation.py -k first_token -v
+.\backend\.venv\Scripts\python.exe -m pytest -q
 ```
 
-## Adding a test
+Tests use mocked external services and in-process TestClient requests; they do not start a local server. conftest.py disables Gradio analytics and supplies API fixtures. pytest.ini adds backend to the import path.
 
-Choose the file matching the feature. Use a descriptive `test_...` name and
-keep setup, action, and assertions together. Use `client` for chat/upload HTTP
-tests and `monkeypatch` to replace external services. Put fixtures in
-`conftest.py` only when multiple modules need them; keep feature-specific
-helpers next to their tests. Do not put real credentials or live API calls in
-this offline suite.
+| File | Coverage |
+| --- | --- |
+| `test_answer_evidence.py` | Document-first decisions and streaming marker boundaries without network calls. |
+| `test_api_routes.py` | Regression checks |
+| `test_assistant_service.py` | Pinecone Assistant chat requests and asynchronous file processing. |
+| `test_assistant_skills.py` | Pinecone request policies: provider isolation, fallback, and API/UI validation. |
+| `test_chat_api.py` | Chat endpoint routing, streaming errors, and per-request options. |
+| `test_chat_command.py` | Command behavior shared by HTTP and Gradio invokers. |
+| `test_chat_schema.py` | Chat request defaults and input validation. |
+| `test_frontend.py` | UI provider selection, streaming callbacks, library state, and dark theme. |
+| `test_ingestion_service.py` | Document ingestion routing, progress, and failure isolation. |
+| `test_pinecone_only.py` | Regression boundaries for the single-provider application. |
+| `test_provider_service.py` | Provider factories, configuration isolation, and readiness checks. |
+| `test_service_architecture.py` | Behavioral contracts for dependency injection and provider extension. |
+| `test_social_messages.py` | Short social messages avoid provider initialization, retrieval, and search. |
+| `test_upload_api.py` | Upload endpoint provider selection, size limits, and file cleanup. |
+| `test_web_search.py` | Offline search tests: no credentials, servers, or provider requests needed. |
+
+These checks do not verify live provider credentials, latency, or browser rendering. CI separately checks container startup.

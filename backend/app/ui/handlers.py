@@ -43,21 +43,6 @@ def library_rows(provider, receipts):
     return rows
 
 
-def provider_panel(provider, receipts):
-    config = provider_configuration(provider)
-    is_nvidia = provider == "nvidia"
-    note = ("Your NVIDIA uploads from this session. Existing indexed documents remain searchable."
-            if is_nvidia else "Assistant searches its separate file library. File status reloads when you select a provider.")
-    return (
-        status_markdown(config), gr.update(visible=is_nvidia),
-        gr.update(value=config["enable_thinking"]),
-        gr.update(value=f"Upload to {PROVIDER_LABELS[provider]}"),
-        library_rows(provider, receipts), note,
-        f"Files upload only to {PROVIDER_LABELS[provider]}.",
-        f"{PROVIDER_LABELS[provider]} - Ready" if config["configured"] else f"{PROVIDER_LABELS[provider]} - Setup required",
-    )
-
-
 def refresh_provider(provider, receipts):
     config = inspect_provider(provider)
     # Copy-on-write session data prevents accidental mutation of the caller.
@@ -73,15 +58,15 @@ def refresh_provider(provider, receipts):
     return status_markdown(config), updated, library_rows(provider, updated)
 
 
-def rag_answer(message, _history, provider="pinecone", top_k=None, enable_thinking=False, web_search=False):
+def rag_answer(message, _history, provider="pinecone", web_search=False, skill="general"):
     label = PROVIDER_LABELS[provider]
     if not message or not message.strip():
         yield "Please enter a question about your documents.", f"{label} · No question submitted"
         return
     try:
-        request = ChatRequest(query=message, provider=provider, top_k=None if top_k is None or top_k == "auto" else int(top_k), enable_thinking=enable_thinking, web_search=web_search)
+        request = ChatRequest(query=message, provider=provider, web_search=web_search, skill=skill)
     except (ValidationError, ValueError):
-        yield "Enter a question of up to 12,000 characters, a valid retrieval count.", f"{label} · Invalid request"
+        yield "Enter a question of up to 12,000 characters, and select a valid task.", f"{label} · Invalid request"
         return
     command = AnswerCommand.from_request(request)
     if command.local_reply is not None:
@@ -142,6 +127,6 @@ async def ingest_file(file_path, receipts=None, provider="pinecone", progress=gr
         return str(exc.detail), updated, library_rows(provider, updated)
     except Exception:
         logger.exception("Document upload failed")
-        return "Upload failed. Check the provider connection, then select the provider again before retrying.", updated, library_rows(provider, updated)
+        return "Upload failed. Check the provider connection, then reload the page before retrying.", updated, library_rows(provider, updated)
 
 

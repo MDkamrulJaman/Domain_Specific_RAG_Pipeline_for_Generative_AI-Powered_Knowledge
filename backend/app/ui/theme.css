@@ -37,3 +37,16 @@
 .gradio-container :focus-visible { outline: 2px solid #14b8a6 !important; outline-offset: 3px; }
 @media (max-width: 800px) { .gradio-container { padding: 12px !important; } .hero { padding: 24px; } .hero-aside { display: none; } #workspace-sidebar { max-width: none; } #workspace-sidebar, #conversation-panel { padding: 16px; } }
 @media (prefers-reduced-motion: reduce) { .gradio-container * { transition: none !important; animation: none !important; } }
+
+/* Unified chat workspace: controls, saved chats and document names share a sidebar. */
+.gradio-container { max-width: none !important; padding: 12px 20px !important; }
+#workspace-sidebar { max-width: none; border-radius: 0; padding: 18px; gap: 14px; }
+#conversation-panel { max-width: 1080px; margin: 0 auto; border: none; background: transparent; }
+#session-list { gap: 8px; }
+#saved-chats { max-height: 240px; overflow-y: auto; }
+#document-library { max-height: 220px; overflow-y: auto; }
+#knowledge-chat { min-height: 400px; }
+@media (max-width: 800px) {
+  .gradio-container { padding: 8px !important; }
+  #conversation-panel { padding: 8px; min-width: 0 !important; }
+}

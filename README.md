@@ -209,7 +209,7 @@ Switching providers changes the destination for subsequent operations. Questions
 
 ## NVIDIA answering
 
-Questions go directly into the grounded answer prompt. The frontend retrieves up to five passages automatically; API clients can override `top_k` (1-50), with null selecting five. Assistant manages its own retrieval. Generic document context is bounded to 16,000 characters, and model output uses `MODEL_MAX_TOKENS`. Existing NVIDIA web-mode budgets still apply when web fallback is enabled.
+Questions go directly into the grounded answer prompt. The frontend retrieves up to five passages automatically; API clients can override `top_k` (1-50), with null selecting five. Assistant manages its own retrieval. Generic document context is bounded to 16,000 characters, and model output uses `MODEL_MAX_TOKENS`. NVIDIA is document-only and has no web-search adapter.
 
 `services/skills.py` is retained as an inactive reference file. Nothing in the application imports it. There is no skill field, routing, or task-specific policy in the API, UI, commands, prompts, or services. Summaries and explanations are requested through the question itself. Older clients sending an extra `skill` property receive the same generic behavior because unknown request properties are ignored.
 
@@ -362,7 +362,7 @@ After reviewing changes, push to `main` or merge a checked pull request. Include
 | Assistant files are still processing | Refresh until the remote files become available                                   |
 | Dense-vector dimension/schema error  | Index schema, embedding width, and configured dimension                           |
 | Upload is rejected                   | PDF/TXT extension and`MAX_UPLOAD_MB`                                            |
-| Response stops at the length limit   | Narrow the question or use General answer with a suitable configured token limit  |
+| Response stops at the length limit   | Narrow the question or review the model and web-mode output limits                |
 | CI dependency consistency fails      | Match requirements and project dependency declarations                            |
 | Container job fails                  | Startup logs, dependency compatibility, health status, and frontend HTTP response |
 | Cloud deployment fails               | Deployment secrets, token validity, application directory, and cloud build logs   |
@@ -391,7 +391,7 @@ Model selection is configurable. Credit for individual model weights belongs to 
 
 ## Optional document-first web fallback
 
-Both providers first answer from their own document library. **Allow web search** is off by default. With it disabled, insufficient document evidence produces an explicit no-knowledge message. With it enabled, insufficient evidence triggers one Tavily search, followed by an answer from the selected provider with linked page titles. Empty or insufficient web evidence produces a no-answer message.
+Both providers first answer from their own document library. Only Pinecone Assistant supports web fallback; NVIDIA ignores the API `web_search` option and returns a no-knowledge message when documents cannot answer. **Allow web search** is off by default. With it disabled, insufficient document evidence produces an explicit no-knowledge message. With it enabled, insufficient evidence triggers one Tavily search, followed by an answer from Pinecone Assistant with linked page titles. Empty or insufficient web evidence produces a no-answer message.
 
 The ordinary document-answer call is also the evidence decision: the prompt requests a private control marker only if evidence cannot answer the question. A bounded streaming gate suppresses that marker even across token boundaries; normal answers stream immediately once the marker is ruled out. There is no separate classifier call. A supported document answer makes one generation call and zero search calls; fallback with nonempty documents can make two generation calls. Empty NVIDIA retrieval skips the first generation. Timeouts, authentication failures, empty model streams, and malformed partial markers are errors, not fallback decisions.
 
@@ -404,14 +404,11 @@ TAVILY_API_KEY=your-tavily-api-key
 WEB_SEARCH_MAX_RESULTS=3
 WEB_SEARCH_TIMEOUT_SECONDS=8
 MODEL_MAX_RETRIES=0
-NVIDIA_WEB_DOCUMENT_CHARS=6000
-NVIDIA_WEB_EXCERPT_CHARS=1000
-NVIDIA_WEB_MAX_TOKENS=512
 ```
 
-API: `POST /api/chat/stream` with `{"query":"your question","provider":"pinecone","web_search":true}`. Use `nvidia` for NVIDIA generation. Tavily receives only the original question on fallback, not uploaded document contents. A question itself may contain private information. The LangChain Core tool performs one basic search with bounded excerpts and network timeout; no MCP server or background indexing is required. Document retrieval and web search are intentionally sequential to avoid unnecessary external requests.
+API: `POST /api/chat/stream` with `{"query":"your question","provider":"pinecone","web_search":true}`. Use `nvidia` for document-only NVIDIA generation; `web_search` is ignored for that provider. Tavily receives only the original question on fallback, not uploaded document contents. A question itself may contain private information. The LangChain Core tool performs one basic search with bounded excerpts and network timeout; no MCP server or background indexing is required. Document retrieval and web search are intentionally sequential to avoid unnecessary external requests.
 
-NVIDIA uses its configured web-mode evidence/output budgets when fallback is enabled. Its SDK retries default to zero for interactive chat. Setting `MODEL_MAX_RETRIES` to 1 or 2 explicitly opts in to additional attempts. Timeouts remain network-operation limits, not end-to-end deadlines. Increasing them allows longer waits rather than faster inference. On a timeout during web-answer generation, labelled search excerpts remain available. A document-answer timeout does not trigger search.
+NVIDIA uses generic document context and model output limits. Its SDK retries default to zero for interactive chat. Setting `MODEL_MAX_RETRIES` to 1 or 2 explicitly opts in to additional attempts. Timeouts remain network-operation limits, not end-to-end deadlines. Increasing them allows longer waits rather than faster inference. A document-answer timeout does not trigger search.
 
 Assistant requires an available uploaded file to generate. If it reports no files, web search can return labelled excerpts and links, but the app does not silently switch models. Search results are never uploaded to either library. Named links are drawn from the search response, with hostname fallback; they are not model-invented URLs.
 
@@ -428,3 +425,13 @@ The frontend has no **Refresh connection & files** button. It checks the selecte
 Exact short greetings and acknowledgments (such as `hello`, `nice`, `good`, `wellcome`, or `thank you`) receive a local reply in the API and UI, even with search enabled. They do not initialize a provider or call retrieval/search. Messages containing a real question continue through the normal pipeline.
 
 The evidence gate also recognizes a small list of explicit leading refusals, including ?You did not provide enough information to answer this question?, across streaming chunks. These trigger the same conditional web fallback as the control marker. This is conservative phrase matching, not a universal language classifier; unfamiliar refusals may still require additional handling. Transport errors remain errors rather than search decisions.
+
+## Sidebar and saved chat sessions
+
+The interface uses a collapsible left sidebar with **New chat**, saved conversation titles, provider selection, dark mode, NVIDIA thinking (NVIDIA only), Pinecone web fallback (Pinecone only), document upload, and uploaded file names/status. Pinecone remains the default provider. No separate task skills are active for either provider; `skills.py` remains an unused reference.
+
+Chat sessions use Gradio's built-in browser-local history. New chat clears the visible conversation; selecting an earlier title restores its transcript. Sessions are stored in the current browser's local storage, not in a shared server database, and may remain on a shared computer. Clear conversations using the chat controls or clear site data to remove stored history. History is not synchronized between devices. Do not use a shared browser for sensitive conversations.
+
+Saved sessions restore messages, not provider settings or a private document collection. The currently selected provider answers the next question. Each question remains independent; restored history is displayed but is not sent as LLM context. Document libraries remain provider-specific and shared within the configured account/namespace. Assistant filenames come from its remote library; NVIDIA filenames represent this browser session's uploads because its index does not expose the original upload file library.
+
+Connection and file status refresh automatically on page load, provider changes, and uploads. The sidebar is collapsible for smaller screens. The application does not run periodic remote polling. NVIDIA has no Tavily client; even an API request with `provider=nvidia, web_search=true` uses document-only generation.

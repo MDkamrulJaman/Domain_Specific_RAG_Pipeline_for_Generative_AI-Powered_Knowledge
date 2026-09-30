@@ -22,7 +22,7 @@ def response_stream(service, req):
         yield "\n\n[Response interrupted. Check the provider configuration and try again.]"
 
 
-@chat_router.post("/stream", summary="Stream an answer from NVIDIA or Pinecone Assistant")
+@chat_router.post("/stream", summary="Stream an answer from Pinecone Assistant")
 def stream_chat(req: ChatRequest):
     try:
         command = AnswerCommand.from_request(req)

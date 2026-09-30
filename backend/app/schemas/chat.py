@@ -1,17 +1,17 @@
 """SRP: transport validation only; provider execution lives in AnswerCommand."""
 from typing import Literal
+from app.services.skills import SkillName
 from pydantic import BaseModel, Field, field_validator
 
-Provider = Literal["nvidia", "pinecone"]
+Provider = Literal["pinecone"]
 
 
 class ChatRequest(BaseModel):
     query: str = Field(min_length=1, max_length=12000)
-    top_k: int | None = Field(default=5, ge=1, le=50, description="NVIDIA passage limit; null selects the default of 5. Ignored by Assistant.")
-    web_search: bool = Field(default=False, description="Allow Tavily fallback only when documents cannot answer; sends the question externally on fallback.")
+    web_search: bool = Field(default=False, description="Pinecone Assistant only: allow web fallback when documents cannot answer.")
+    skill: SkillName = Field(default="general", description="Pinecone Assistant task policy.")
     chat_id: str | None = None
     provider: Provider = "pinecone"
-    enable_thinking: bool | None = None
 
     @field_validator("query")
     @classmethod

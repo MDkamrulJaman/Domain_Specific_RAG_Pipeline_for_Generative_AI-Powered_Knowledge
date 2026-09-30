@@ -3,7 +3,6 @@ import pytest
 from unittest.mock import Mock
 from fastapi import HTTPException
 from app.services.answer_evidence import MISSING, supported_stream, NO_DOCUMENT_ANSWER, NO_WEB_ANSWER
-from app.services.rag_service import RAGService
 from app.services.assistant_service import AssistantService
 
 
@@ -25,24 +24,16 @@ def test_supported_answer_streams_immediately():
         next(stream)
 
 
-@pytest.mark.parametrize("provider", ["nvidia", "pinecone"])
 @pytest.mark.parametrize("web", [False, True])
 @pytest.mark.parametrize("supported", [False, True])
-def test_document_first_matrix(provider, web, supported):
+def test_document_first_matrix(web, supported):
     search = Mock()
     search.search.return_value = [{"text":"evidence", "url":"https://example.org"}]
     answers = [iter(["Document answer" if supported else MISSING]), iter(["Web answer"])]
-    if provider == "nvidia":
-        retriever, llm = Mock(), Mock()
-        retriever.search.return_value = [{"text":"document"}]
-        llm.stream.side_effect = answers
-        service = RAGService(retriever, llm, search)
-        generation = llm.stream
-    else:
-        service = AssistantService.__new__(AssistantService)
-        service.web_search_tool = search
-        service._chat = Mock(side_effect=answers)
-        generation = service._chat
+    service = AssistantService.__new__(AssistantService)
+    service.web_search_tool = search
+    service._chat = Mock(side_effect=answers)
+    generation = service._chat
     result = "".join(service.stream("q", web_search=web))
     assert search.search.call_count == int(web and not supported)
     assert generation.call_count == (2 if web and not supported else 1)
@@ -51,40 +42,33 @@ def test_document_first_matrix(provider, web, supported):
 
 
 def test_web_evidence_also_must_support_answer():
-    store, llm, search = Mock(), Mock(), Mock()
-    store.search.return_value = []
-    search.search.return_value = [{"text":"irrelevant", "url":"https://example.org"}]
-    llm.stream.return_value = iter([MISSING])
-    result = RAGService(store,llm,search).ask("q",5,web_search=True)
+    service = AssistantService.__new__(AssistantService)
+    service._chat = Mock(side_effect=[iter([MISSING]), iter([MISSING])])
+    service.web_search_tool = Mock()
+    service.web_search_tool.search.return_value = [{"text":"irrelevant", "url":"https://example.org"}]
+    result = "".join(service.stream("q",web_search=True))
     assert NO_WEB_ANSWER in result
     assert "Web sources:" not in result
 
 
 def test_document_timeout_never_triggers_web():
-    store, llm, search = Mock(), Mock(), Mock()
-    store.search.return_value = [{"text":"document"}]
-    llm.stream.side_effect = HTTPException(504,"timeout")
+    service = AssistantService.__new__(AssistantService)
+    service._chat = Mock(side_effect=HTTPException(504, "timeout"))
+    service.web_search_tool = Mock()
     with pytest.raises(HTTPException):
-        RAGService(store,llm,search).ask("q",5,web_search=True)
-    search.search.assert_not_called()
+        list(service.stream("q", web_search=True))
+    service.web_search_tool.search.assert_not_called()
 
 
-@pytest.mark.parametrize("provider", ["nvidia", "pinecone"])
 @pytest.mark.parametrize("web", [False, True])
-def test_natural_refusal_drives_fallback(provider, web):
+def test_natural_refusal_drives_fallback(web):
     search = Mock()
     search.search.return_value = [{"text":"web evidence", "url":"https://example.org"}]
     refusal = "You did not provide enough information to answer this question."
     answers = [iter(refusal), iter(["Web answer"])]
-    if provider == "nvidia":
-        store, llm = Mock(), Mock()
-        store.search.return_value = [{"text":"unrelated"}]
-        llm.stream.side_effect = answers
-        service = RAGService(store, llm, search)
-    else:
-        service = AssistantService.__new__(AssistantService)
-        service.web_search_tool = search
-        service._chat = Mock(side_effect=answers)
+    service = AssistantService.__new__(AssistantService)
+    service.web_search_tool = search
+    service._chat = Mock(side_effect=answers)
     answer = "".join(service.stream("q", web_search=web))
     assert ("Web answer" if web else NO_DOCUMENT_ANSWER) in answer
     assert refusal not in answer

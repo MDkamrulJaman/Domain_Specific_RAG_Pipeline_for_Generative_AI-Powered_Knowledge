@@ -9,74 +9,12 @@ from fastapi import HTTPException
 from app.core.config import WebSearchSettings
 from app.schemas.chat import ChatRequest
 from app.services.chat_command import AnswerCommand
-from app.services.rag_service import RAGService
 from app.services.web_search import TavilySearchAdapter
 from app.services.answer_evidence import MISSING
 
 
 def settings(**kwargs):
     return WebSearchSettings(_env_file=None, TAVILY_API_KEY="test-placeholder", **kwargs)
-
-
-def pipeline(docs):
-    store = Mock()
-    store.search.return_value = docs
-    llm = Mock()
-    llm.stream.return_value = iter(["Answer [1]"])
-    search = Mock()
-    search.search.return_value = [{"text": "Public evidence", "url": "https://example.org/source"}]
-    checker = Mock()
-    checker.supports.return_value = False
-    return RAGService(store, llm, search), search, checker
-
-
-def test_opt_out_preserves_document_path():
-    service, search, checker = pipeline([{"text": "Private evidence"}])
-    assert service.ask("question", 5) == "Answer [1]"
-    search.search.assert_not_called()
-    checker.supports.assert_not_called()
-
-
-@pytest.mark.parametrize("docs", [[], [{"text": "Unrelated document"}]])
-def test_insufficient_documents_search_with_citations(docs):
-    service, search, checker = pipeline(docs)
-    service.llm.stream.side_effect = [iter([MISSING]), iter(["Answer"])] if docs else [iter(["Answer"])]
-    answer = service.ask("question", 5, web_search=True)
-    assert "Web search enabled" in answer
-    assert "https://example.org/source" in answer
-    search.search.assert_called_once_with("question")
-    if not docs:
-        checker.supports.assert_not_called()
-
-
-def test_enabled_search_uses_one_generation_call():
-    service, search, checker = pipeline([{"text": "Evidence"}])
-    checker.supports.return_value = True
-    assert "Answer [1]" in service.ask("question", 5, web_search=True)
-    search.search.assert_not_called()
-    service.llm.stream.assert_called_once()
-
-
-def test_empty_search_returns_explicit_no_answer():
-    service, search, _ = pipeline([])
-    search.search.return_value = []
-    assert "not find enough evidence" in service.ask("question", 5, web_search=True)
-    service.llm.stream.assert_not_called()
-
-
-@pytest.mark.parametrize("status", [401, 503])
-def test_retrieval_failure_blocks_generation_with_parallel_search(status):
-    service, search, _ = pipeline([])
-    service.vectorstore.search.side_effect = HTTPException(status, "Failed")
-    with pytest.raises(HTTPException):
-        service.ask("q", 5, web_search=True)
-    service.llm.stream.assert_not_called()
-
-
-def test_missing_index_can_search():
-    service, search, _ = pipeline([])
-    service.vectorstore.search.side_effect = HTTPException(404, "Empty")
-    assert "Web sources" in service.ask("q", 5, web_search=True)
 
 
 def test_langchain_tool_request_and_source_filtering():
@@ -112,19 +50,10 @@ def test_missing_key_is_actionable():
         adapter.search("q")
 
 
-def test_api_routes_web_search_to_nvidia(client, monkeypatch):
-    receiver = Mock()
-    receiver.stream.return_value = iter(["answer"])
-    monkeypatch.setattr("app.api.routes.chat.get_chat_service", lambda provider: receiver)
-    response = client.post("/chat/stream", json={"query": "q", "provider": "nvidia", "web_search": True})
-    assert response.status_code == 200
-    receiver.stream.assert_called_once_with("q", 5, enable_thinking=None, web_search=True)
-
-
 def test_assistant_receives_search_option():
     receiver = Mock()
     AnswerCommand.from_request(ChatRequest(query="q", web_search=True)).execute(receiver)
-    receiver.stream.assert_called_once_with("q", 5, enable_thinking=None, web_search=True)
+    receiver.stream.assert_called_once_with("q", web_search=True, skill="general")
 
 
 def test_ui_passes_search_option(monkeypatch):
@@ -132,11 +61,11 @@ def test_ui_passes_search_option(monkeypatch):
     receiver = Mock()
     receiver.stream.return_value = iter(["answer"])
     monkeypatch.setattr("app.ui.handlers.get_chat_service", lambda provider: receiver)
-    list(rag_answer("q", [], "nvidia", 5, False, True))
-    receiver.stream.assert_called_once_with("q", 5, enable_thinking=False, web_search=True)
+    list(rag_answer("q", [], "pinecone", True))
+    receiver.stream.assert_called_once_with("q", web_search=True, skill="general")
 
 
-def test_assistant_uses_search_without_nvidia():
+def test_assistant_uses_search_after_missing_document_evidence():
     from app.core.config import AssistantSettings
     from app.services.assistant_service import AssistantService
     config = AssistantSettings(_env_file=None, PINECONE_ASSISTANT_API_KEY="test-key",
@@ -151,36 +80,6 @@ def test_assistant_uses_search_without_nvidia():
     assert "public evidence" in sdk.assistants.chat.call_args.kwargs["messages"][0]["content"]
     search.search.assert_called_once_with("q")
     assert sdk.assistants.chat.call_count == 2
-
-
-def test_nvidia_midstream_timeout_is_actionable():
-    from app.services.llm_service import LLMService
-    service = LLMService.__new__(LLMService)
-    def stream(*args):
-        yield "partial"
-        raise httpx.ReadTimeout("upstream")
-    service._stream = stream
-    result = service.stream("q")
-    assert next(result) == "partial"
-    with pytest.raises(HTTPException) as caught:
-        next(result)
-    assert caught.value.status_code == 504
-    assert "configured network timeout" in caught.value.detail
-
-
-@pytest.mark.parametrize("configured_retries, expected", [(None, 0), (0, 0), (1, 1)])
-def test_nvidia_retry_default_and_override(monkeypatch, configured_retries, expected):
-    from app.core.config import NvidiaSettings
-    from app.services import llm_service
-    config = NvidiaSettings(_env_file=None, MODEL_BASE_URL="https://example.org",
-        MODEL_NAME="test", MODEL_API_KEY="test-key", MODEL_TIMEOUT_SECONDS=30,
-        MODEL_TEMPERATURE=0.1, MODEL_TOP_P=0.9, MODEL_MAX_TOKENS=512)
-    if configured_retries is not None:
-        config.MODEL_MAX_RETRIES = configured_retries
-    client_factory = Mock()
-    monkeypatch.setattr(llm_service, "OpenAI", client_factory)
-    llm_service.LLMService(config)
-    assert client_factory.call_args.kwargs["max_retries"] == expected
 
 
 @pytest.mark.parametrize("status, message", [(400, "No files found"), (401, "Unauthorized")])
@@ -208,31 +107,7 @@ def test_assistant_search_api_option(client, monkeypatch):
     monkeypatch.setattr("app.api.routes.chat.get_chat_service", lambda provider: receiver)
     response = client.post("/chat/stream", json={"query": "q", "web_search": True})
     assert response.status_code == 200
-    receiver.stream.assert_called_once_with("q", 5, enable_thinking=None, web_search=True)
-
-
-@pytest.mark.parametrize("partial", [False, True])
-def test_nvidia_timeout_keeps_search_evidence(partial):
-    service, search, _ = pipeline([])
-    def timeout(*args, **kwargs):
-        if partial:
-            yield "partial answer"
-        raise HTTPException(504, "NVIDIA timed out.")
-    service.llm.stream.side_effect = timeout
-    answer = service.ask("q", 5, web_search=True)
-    assert "waiting for NVIDIA" in answer
-    assert "answer generated by NVIDIA" not in answer
-    assert "not a generated answer" in answer
-    assert "https://example.org/source" in answer
-    assert ("partial answer" in answer) is partial
-    service.llm.stream.assert_called_once()
-
-
-def test_nvidia_timeout_without_search_still_reports_error():
-    service, _, _ = pipeline([{"text": "document"}])
-    service.llm.stream.side_effect = HTTPException(504, "NVIDIA timed out.")
-    with pytest.raises(HTTPException):
-        service.ask("q", 5)
+    receiver.stream.assert_called_once_with("q", web_search=True, skill="general")
 
 
 def test_source_excerpts_escape_embedded_links():
@@ -243,40 +118,10 @@ def test_source_excerpts_escape_embedded_links():
     assert "[example.org](https://example.org)" in result
 
 
-def test_nvidia_document_answer_does_not_search():
-    service, search, _ = pipeline([{"text": "document"}])
-    assert "Answer" in service.ask("q", 5, web_search=True)
-    search.search.assert_not_called()
-    service.llm.stream.assert_called_once()
-
-
-def test_nvidia_web_budgets_do_not_mutate_sources():
-    from app.core.config import NvidiaWebSettings
-    service, search, _ = pipeline([{"text": "a" * 1100}, {"text": "b" * 1100}])
-    service.web_settings = NvidiaWebSettings(_env_file=None, NVIDIA_WEB_DOCUMENT_CHARS=1200,
-        NVIDIA_WEB_EXCERPT_CHARS=200, NVIDIA_WEB_MAX_TOKENS=256)
-    original = {"text": "z" * 500, "url": "https://example.org"}
-    search.search.return_value = [original]
-    service.llm.stream.side_effect = [iter([MISSING]), iter(["answer"])]
-    service.ask("q", 5, web_search=True)
-    prompt = service.llm.stream.call_args_list[0].args[0]
-    assert "a" * 1100 in prompt
-    assert "b" * 1100 not in prompt
-    assert "z" * 201 not in service.llm.stream.call_args.args[0]
-    assert original["text"] == "z" * 500
-    assert service.llm.stream.call_args.kwargs == {"enable_thinking": False, "max_tokens": 256}
-
-
-def test_nvidia_web_honors_explicit_thinking():
-    service, _, _ = pipeline([])
-    list(service.stream("q", 5, enable_thinking=True, web_search=True))
-    assert service.llm.stream.call_args.kwargs["enable_thinking"] is True
-
-
 def test_named_source_links_and_excerpt_headings():
     from app.services.web_search import source_links, source_excerpts
-    sources = [{"title": "NVIDIA Documentation", "url": "https://example.org/docs", "text": "Evidence"}]
-    link = "[W1] [NVIDIA Documentation](https://example.org/docs)"
+    sources = [{"title": "Publisher Documentation", "url": "https://example.org/docs", "text": "Evidence"}]
+    link = "[W1] [Publisher Documentation](https://example.org/docs)"
     assert link in source_links(sources)
     assert link in source_excerpts(sources)
     assert source_excerpts(sources).count("https://example.org/docs") == 1

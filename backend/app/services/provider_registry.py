@@ -10,7 +10,7 @@ class ProviderDefinition:
     label: str
     chat_factory: Callable[[], ChatService]
     upload: DocumentUploader
-    configuration: Callable[[], tuple[Any, tuple[str, ...], str, bool]]
+    configuration: Callable[[], tuple[Any, tuple[str, ...], str]]
     inspect: Callable[[ChatService], dict[str, Any]]
 
 

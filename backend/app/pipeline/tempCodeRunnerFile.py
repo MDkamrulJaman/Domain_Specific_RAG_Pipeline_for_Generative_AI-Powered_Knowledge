@@ -1,1 +1,1 @@
-from app.pipeline.embedder import EmbeddingService
+# Former embedding scratch file; the application uses managed Assistant uploads.

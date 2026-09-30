@@ -13,11 +13,7 @@ dependencies = [
     "openai",
     "httpx",
     "pinecone>=10.0.0,<11",
-    "huggingface-hub",
-    "numpy",
     "langchain-core",
-    "langchain-text-splitters",
-    "pypdf",
 ]
 
 [tool.fastapi]

@@ -7,9 +7,9 @@ from app.schemas.chat import ChatRequest
 
 def test_defaults_and_bounds():
     req = ChatRequest(query="q")
-    assert (req.provider, req.top_k) == ("pinecone", 5)
+    assert req.provider == "pinecone"
     with pytest.raises(ValidationError):
-        ChatRequest(query="q", top_k=0)
+        ChatRequest(query="q", provider="unsupported")
 
 
 @pytest.mark.parametrize("query", ["", "   ", "x" * 12001])

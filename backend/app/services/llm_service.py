@@ -1,17 +1,20 @@
+"""Unused reference adapter. Not registered or called by the application.
+
+Settings must be explicitly injected; this module loads no environment config.
+"""
 import logging
 import time
 from openai import OpenAI, APITimeoutError
 import httpx
 from fastapi import HTTPException
-from app.core.config import NvidiaSettings
 
 logger = logging.getLogger(__name__)
 
 
-# Adapter: translate our TextGenerator interface to the NVIDIA-compatible SDK.
+# Adapter: translate our TextGenerator interface to the OpenAI-compatible SDK.
 class LLMService:
-    def __init__(self, settings=None, client=None):
-        self.settings = settings if settings is not None else NvidiaSettings()
+    def __init__(self, settings, client=None):
+        self.settings = settings
         self.client = client if client is not None else OpenAI(
             base_url=self.settings.MODEL_BASE_URL,
             api_key=self.settings.MODEL_API_KEY,
@@ -28,16 +31,16 @@ class LLMService:
         except (APITimeoutError, httpx.TimeoutException) as exc:
             # Log only the exception class, never exception text or request headers.
             cause = exc.__cause__ if exc.__cause__ is not None else exc
-            logger.warning("NVIDIA request timed out after %.2f seconds (transport=%s)",
+            logger.warning("LLM request timed out after %.2f seconds (transport=%s)",
                            time.perf_counter() - started, type(cause).__name__)
-            raise HTTPException(504, "NVIDIA did not respond within the configured network timeout after any configured retries. Try again or select Pinecone Assistant.") from None
+            raise HTTPException(504, "LLM did not respond within the configured network timeout after any configured retries. Try again.") from None
 
     def _stream(self, prompt: str, enable_thinking: bool | None = None,
                max_tokens: int | None = None):
         if not prompt.strip():
             return
         start = time.perf_counter()
-        logger.info("NVIDIA generation request starting (model=%s; thinking=%s)",
+        logger.info("LLM generation request starting (model=%s; thinking=%s)",
                     self.settings.MODEL_NAME,
                     self.settings.MODEL_ENABLE_THINKING if enable_thinking is None else enable_thinking)
         response = self.client.chat.completions.create(
@@ -53,7 +56,7 @@ class LLMService:
             }},
             stream=True,
         )
-        logger.info("NVIDIA response headers received in %.2f seconds", time.perf_counter() - start)
+        logger.info("LLM response headers received in %.2f seconds", time.perf_counter() - start)
         first_token = None
         finish_reason = None
         try:
@@ -65,10 +68,10 @@ class LLMService:
                 if choice.delta.content:
                     if first_token is None:
                         first_token = time.perf_counter() - start
-                        logger.info("NVIDIA first response token in %.2f seconds", first_token)
+                        logger.info("LLM first response token in %.2f seconds", first_token)
                     yield choice.delta.content
             if finish_reason == "length":
-                yield "\n\n[Response reached its length limit. Ask a narrower follow-up, or use General answer with a higher MODEL_MAX_TOKENS for longer answers.]"
+                yield "\n\n[Response reached its length limit. Ask a narrower follow-up or request the remaining details in another message.]"
         finally:
             response.close()
             logger.info("LLM request completed in %.2f seconds (first token: %s; finish: %s)",

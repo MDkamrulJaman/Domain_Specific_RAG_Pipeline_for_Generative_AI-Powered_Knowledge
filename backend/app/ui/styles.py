@@ -13,14 +13,14 @@ HEADER = """
   <div class="hero-content">
     <div><p class="eyebrow">YOUR DOCUMENTS. A CLEARER PICTURE.</p>
     <h5>Less searching.<br><span>More understanding.</span></h5>
-    <p class="hero-description">Turn technical documents into a conversation.<br>Choose your assistant and find the answers that matter.</p></div>
-    <div class="hero-aside"><span class="step">01 <b>Choose a provider</b></span><span class="step">02 <b>Add your documents</b></span><span class="step">03 <b>Ask a question</b></span></div>
+    <p class="hero-description">Turn technical documents into a conversation.<br>Find answers grounded in your documents.</p></div>
+    <div class="hero-aside"><span class="step">01 <b>Open your workspace</b></span><span class="step">02 <b>Add your documents</b></span><span class="step">03 <b>Ask a question</b></span></div>
   </div>
 </header>
 """
 EMPTY_CHAT = """
 <div class="chat-welcome"><div class="welcome-icon" aria-hidden="true">✧</div>
-<h2>Your next insight starts here.</h2><p>Upload a document to the selected provider,<br>then ask a question in your own words.</p>
+<h2>Your next insight starts here.</h2><p>Upload a document to Pinecone Assistant,<br>then ask a question in your own words.</p>
 </div>
 """
 

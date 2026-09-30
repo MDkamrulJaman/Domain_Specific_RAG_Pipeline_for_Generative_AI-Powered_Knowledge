@@ -5,7 +5,7 @@ from app.services.chat_command import AnswerCommand
 from app.schemas.chat import ChatRequest
 
 
-@pytest.mark.parametrize("provider", ["nvidia", "pinecone"])
+@pytest.mark.parametrize("provider", ["pinecone"])
 @pytest.mark.parametrize("message", ["nice", "GOOD!", "wellcome", "Hello", "Thank you."])
 def test_social_api_never_initializes_provider(client, monkeypatch, provider, message):
     factory = Mock(side_effect=AssertionError("must stay local"))
@@ -20,7 +20,7 @@ def test_social_ui_never_initializes_provider(monkeypatch):
     from app.ui.handlers import rag_answer
     factory = Mock(side_effect=AssertionError("must stay local"))
     monkeypatch.setattr("app.ui.handlers.get_chat_service", factory)
-    assert list(rag_answer("nice", [], "nvidia", web_search=True))[0][0] == "Glad to help!"
+    assert list(rag_answer("nice", [], "pinecone", web_search=True))[0][0] == "Glad to help!"
     factory.assert_not_called()
 
 

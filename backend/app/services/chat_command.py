@@ -6,6 +6,7 @@ import unicodedata
 
 from app.schemas.chat import ChatRequest, Provider
 from app.services.contracts import ChatService
+from app.services.skills import SkillName
 
 
 @dataclass(frozen=True)
@@ -16,15 +17,13 @@ class AnswerCommand:
     automatic retries, or undo: those would need explicit product semantics.
     """
     query: str
-    top_k: int | None
     provider: Provider
-    enable_thinking: bool | None
     web_search: bool = False
+    skill: SkillName = "general"
 
     @classmethod
     def from_request(cls, request: ChatRequest) -> "AnswerCommand":
-        return cls(request.query, request.top_k, request.provider,
-                   request.enable_thinking, request.web_search)
+        return cls(request.query, request.provider, request.web_search, request.skill)
 
     @property
     def local_reply(self) -> str | None:
@@ -46,7 +45,4 @@ class AnswerCommand:
             return iter([reply])
         if receiver is None:
             raise ValueError("A chat provider is required for this question.")
-        if self.web_search:
-            return receiver.stream(self.query, self.top_k,
-                                   enable_thinking=self.enable_thinking, web_search=True)
-        return receiver.stream(self.query, self.top_k, enable_thinking=self.enable_thinking)
+        return receiver.stream(self.query, web_search=self.web_search, skill=self.skill)

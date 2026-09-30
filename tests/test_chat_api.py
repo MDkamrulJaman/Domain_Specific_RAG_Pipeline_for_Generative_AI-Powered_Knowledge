@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from app.api.routes import chat
 
 
-@pytest.mark.parametrize("provider", ["nvidia", "pinecone"])
+@pytest.mark.parametrize("provider", ["pinecone"])
 def test_chat_routes_selected_provider(client, monkeypatch, provider):
     service = Mock()
     service.stream.return_value = iter(["Hello", " world"])
@@ -17,7 +17,7 @@ def test_chat_routes_selected_provider(client, monkeypatch, provider):
     assert response.status_code == 200
     assert response.text == "Hello world"
     factory.assert_called_once_with(provider)
-    service.stream.assert_called_once_with("question", 5, enable_thinking=None)
+    service.stream.assert_called_once_with("question", web_search=False, skill="general")
 
 
 def test_invalid_provider_rejected(client):
@@ -43,12 +43,3 @@ def test_midstream_failure_preserves_partial_answer(client, monkeypatch):
     assert response.text.startswith("Partial answer")
     assert "interrupted" in response.text
     assert "private provider details" not in response.text
-
-
-def test_per_request_thinking_is_forwarded(client, monkeypatch):
-    service = Mock()
-    service.stream.return_value = iter(["answer"])
-    monkeypatch.setattr(chat, "get_chat_service", lambda _: service)
-    response = client.post("/chat/stream", json={"query": "q", "top_k": 9, "enable_thinking": True})
-    assert response.status_code == 200
-    service.stream.assert_called_once_with("q", 9, enable_thinking=True)
