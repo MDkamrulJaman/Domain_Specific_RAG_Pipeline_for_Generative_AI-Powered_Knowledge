@@ -27,12 +27,10 @@ def test_only_assistant_options_are_exposed():
     assert "enable_thinking" not in ChatRequest.model_fields
 
 
-def test_retained_helper_has_no_active_importers():
+def test_removed_helper_has_no_active_importers():
     app = Path(__file__).resolve().parents[1] / "backend" / "app"
-    assert (app / "services" / "llm_service.py").is_file()
+    assert not (app / "services" / "llm_service.py").exists()
     for source in app.rglob("*.py"):
-        if source.name == "llm_service.py":
-            continue
         for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
             if isinstance(node, ast.Import):
                 assert all("llm_service" not in alias.name for alias in node.names)

@@ -2,7 +2,7 @@
 
 A retrieval-augmented generation (RAG) application for asking questions about technical documents. FastAPI provides the API, Gradio provides the browser workspace, and hosted AI services provide retrieval and generation.
 
-**Pinecone Assistant is the default provider.** Users can switch to NVIDIA for a configurable retrieval workflow. The interface starts in dark mode default.
+**Pinecone Assistant is the only active provider.** It manages document storage, retrieval, and answer generation. The interface starts in dark mode and offers task policies and optional document-first web search.
 
 ## Contents
 
@@ -13,58 +13,56 @@ A retrieval-augmented generation (RAG) application for asking questions about te
 - [Local setup](#local-setup)
 - [Configuration](#configuration)
 - [Using the workspace](#using-the-workspace)
-- [NVIDIA answering](#nvidia-answering)
+- [Pinecone answering and task policies](#pinecone-answering-and-task-policies)
 - [API reference](#api-reference)
 - [Testing](#testing)
 - [Docker and CI/CD](#docker-and-cicd)
 - [Operational considerations](#operational-considerations)
 - [Troubleshooting](#troubleshooting)
 - [Acknowledgments](#acknowledgments)
+- [Optional document-first web fallback](#optional-document-first-web-fallback)
+- [Sidebar and saved chat sessions](#sidebar-and-saved-chat-sessions)
+- [Future improvements](#future-improvements)
 
 ## Capabilities
 
-- PDF and TXT uploads with configurable size validation.
-- Provider-specific uploads, chat, connection checks, and library views.
-- Streamed answers with first-token and elapsed-time feedback.
-- Responsive Gradio workspace with dark/light themes and clickable question suggestions.
-- Lazy provider construction and cached service clients.
-- Separate API, application services, provider adapters, and document-processing modules.
+- PDF and TXT uploads with extension, nonempty-content, and configurable size validation.
+- Pinecone Assistant file uploads, remote file status, managed retrieval, and streamed answers.
+- General, Summarize, Explain, and Find requirements task policies.
+- Optional Tavily search through LangChain Core when document evidence cannot answer.
+- Named web-source hyperlinks and explicit messages when evidence is insufficient.
+- Local replies to short greetings and acknowledgments without provider or search calls.
+- Responsive Gradio sidebar with dark/light themes, saved chats, and clickable question suggestions.
+- First-token and elapsed-time feedback, lazy service construction, and cached Assistant clients.
+- Shared API/UI workflows, small service interfaces, and injected SDK/search dependencies.
 - Feature-organized offline tests and automated container checks in GitHub Actions.
 
-The application calls hosted models; it does not download or run NVIDIA model weights locally.
+The application calls hosted services. It does not download model weights or run local embedding/inference models. Managed retrieval means the application does not control Assistant's internal chunking or passage selection.
 
 ## Provider workflows
 
-| Behavior              | Pinecone Assistant                   | NVIDIA                                                           |
-| --------------------- | ------------------------------------ | ---------------------------------------------------------------- |
-| Document destination  | Assistant file library               | Configured Pinecone index and namespace                          |
-| Parsing and retrieval | Managed by Assistant                 | Application parsing/chunking plus index search                   |
-| Embeddings            | Managed by Assistant                 | Pinecone integrated embeddings or hosted Hugging Face embeddings |
-| Answer generation     | Assistant chat API                   | NVIDIA API through an OpenAI-compatible client                   |
-| Library display       | Remote Assistant files after refresh | Upload receipts from the current UI session                      |
-
 ### Pinecone Assistant
 
+| Stage | Responsibility |
+| --- | --- |
+| Upload validation | Application checks file extension, size, and nonempty content |
+| Document destination | Configured Assistant file library |
+| Document processing | Managed by Pinecone Assistant |
+| Retrieval and generation | Assistant chat API |
+| Optional public evidence | Tavily search, only after an insufficient-document-evidence decision |
+| Library display | Remote Assistant filenames and processing status |
+
 ```text
-PDF/TXT -> validate upload -> Assistant file library -> processing
-Question -> Assistant managed retrieval and generation -> streamed answer
+PDF/TXT -> validate upload -> Assistant file library -> processing -> available
+Question -> local greeting check -> Assistant retrieval and generation
+                                    | supported -> stream answer
+                                    | unsupported, search off -> no-knowledge message
+                                    ` unsupported, search on -> Tavily -> Assistant web answer + links
 ```
 
-Wait for uploaded files to become available before asking questions. Use **Refresh connection & files** to check their state.
+Wait for uploaded files to become available before asking questions. Connection and file status refresh on page load and after an upload. Reload the page to check later processing changes; no manual refresh button or periodic polling is implemented.
 
-### NVIDIA
-
-```text
-PDF/TXT -> validate -> extract text -> split into chunks
-    -> integrated text records OR Hugging Face vectors -> Pinecone index
-
-Question -> index search -> optional reranking -> grounded answer prompt
-    -> NVIDIA generation -> streamed answer
-```
-
-The index schema determines the embedding path. A `text: semantic_text` field uses Pinecone-managed embeddings. The supported dense-vector path uses Hugging Face vectors with a matching index dimension; document-schema indexes must expose the supported `_values` field. Schema checks reject incompatible configurations before indexing.
-
-Uploads go only to the selected provider. Assistant files and NVIDIA index records are separate; the application does not synchronize them or silently fall back to another provider. Existing NVIDIA index records remain searchable even if they are absent from the current session's upload list. Startup does not create, delete, or migrate remote indexes.
+All active uploads and chat requests use the Assistant library. Separate vector indexes are not searched, synchronized, created, migrated, or deleted by this application. Existing documents stored elsewhere must be uploaded to Assistant to become available here. Future provider expansion is described under [Future improvements](#future-improvements).
 
 ## Project structure
 
@@ -82,7 +80,7 @@ Uploads go only to the selected provider. Assistant files and NVIDIA index recor
 |   |   |-- core/config.py       Settings grouped by provider and operational concern
 |   |   |-- schemas/             Validated API data models
 |   |   |-- services/            Application workflows, contracts, provider adapters
-|   |   |-- pipeline/            Parsing, splitting, embeddings, and index operations
+|   |   |-- pipeline/            Inactive package/scratch remnants; no runtime pipeline
 |   |   |-- ui/                  Gradio layout, handlers, theme, and CSS
 |   |   `-- requirements.txt     Compatibility include for ../requirements.txt
 |   |-- requirements.txt         Dependencies used by pip, tests, and Docker
@@ -93,8 +91,10 @@ Uploads go only to the selected provider. Assistant files and NVIDIA index recor
 |-- tests/                      Offline tests organized by feature
 |   |-- conftest.py             Shared fixtures and in-process API client
 |   `-- README.md               Test coverage map and focused commands
+|-- image/                      Existing illustrations, including historical diagrams
+|-- LICENSE                     Project license
 |-- pytest.ini                  Test discovery and backend import path
-|-- ARCHITECTURE.md              SOLID principles and extension guidance
+|-- ARCHITECTURE.md              Project design, SOLID, all 23 GoF patterns, extension guidance
 |-- .gitignore                  Repository-wide exclusions
 `-- README.md                   Project guide
 ```
@@ -109,47 +109,45 @@ Python `__init__.py` files establish packages or expose public imports. Local `.
 | `api/routes/chat.py`           | Validates chat requests and returns streamed text                  |
 | `api/routes/ingest.py`         | Accepts multipart uploads, bounds reads, and closes uploaded files |
 | `api/routes/providers.py`      | Reports configuration or explicitly checks remote connectivity     |
-| `schemas/chat.py`              | Validates provider, question, retrieval count                      |
-| `schemas/ingest.py`            | Defines ingestion data models                                      |
+| `schemas/chat.py`              | Validates question, Pinecone provider, search option, and task policy                      |
+| `schemas/ingest.py`            | Legacy ingestion model; current upload route returns service result dictionaries                                      |
 
 ### Services
 
-| Module                   | Responsibility                                                         |
-| ------------------------ | ---------------------------------------------------------------------- |
-| `contracts.py`         | Small protocols for chat, generation, retrieval, parsing, and indexing |
-| `provider_registry.py` | Provider definitions and lookup                                        |
-| `provider_service.py`  | Wires adapters, caches clients, and provides readiness summaries       |
-| `assistant_service.py` | Assistant chat, file upload, listing, and status                       |
-| `rag_service.py`       | Retrieves context and coordinates NVIDIA generation                    |
-| `llm_service.py`       | NVIDIA streaming, token limits, timing, and stream cleanup             |
-| `ingestion_service.py` | Validates uploads and dispatches to the selected provider              |
-| `indexing_service.py`  | Coordinates loader, chunker, optional embedder, and index writer       |
-| `prompts.py`           | Builds grounded prompts with deduplicated passages                     |
-| `skills.py`            | Inactive reference; unused by the application                          |
-
-The shared `services/chat_command.py` module implements an immutable answer Command used by both HTTP and Gradio. See [the full GoF pattern catalog](ARCHITECTURE.md#design-pattern-policy) for all 23 patterns, their applicability, and the preserved SOLID boundaries.
+| Module | Responsibility |
+| --- | --- |
+| `contracts.py` | Small protocols for streamed chat, file upload, upload dispatch, and search |
+| `provider_registry.py` | Provider capability definitions and lookup; only Pinecone is registered |
+| `provider_service.py` | Wires adapters, caches the Assistant service, and summarizes configuration/readiness |
+| `assistant_service.py` | Managed chat, uploads, file listing, status, and document-first fallback orchestration |
+| `chat_command.py` | Immutable request Command shared by API and UI; handles exact social messages locally |
+| `ingestion_service.py` | Shared upload validation and dispatch to Assistant |
+| `skills.py` | Immutable task definitions and per-request grounding/formatting instructions |
+| `answer_evidence.py` | Bounded streaming gate for insufficient-evidence markers and recognized refusals |
+| `web_search.py` | LangChain Core Tavily adapter, bounded source excerpts, and safe named hyperlinks |
 
 ### Document pipeline and UI
 
-| Module                            | Responsibility                                                 |
-| --------------------------------- | -------------------------------------------------------------- |
-| `pipeline/loader.py`            | Parses TXT and text-bearing PDFs from bytes or files           |
-| `pipeline/chunker.py`           | Splits documents into retrieval chunks                         |
-| `pipeline/embedder.py`          | Calls hosted Hugging Face inference through a reusable client  |
-| `pipeline/index_schema.py`      | Checks supported vector schemas and dimensions                 |
-| `pipeline/retrieval_service.py` | Writes records, searches, and reranks results                  |
-| `ui/frontend.py`                | Builds components and connects their events                    |
-| `ui/handlers.py`                | Handles streamed answers, uploads, and session library updates |
-| `ui/styles.py`                  | Defines theme configuration and presentation assets            |
-| `ui/theme.css`                  | Styles the responsive workspace                                |
+Document processing is managed remotely by Assistant. The earlier application-side loader, splitter, embedder, index schema checks, retrieval, and reranking modules are no longer active or included as implemented features. Remaining `pipeline/` package/scratch files do not participate in requests.
+
+| Module | Responsibility |
+| --- | --- |
+| `ui/frontend.py` | Builds sidebar/chat components, native saved-history controls, and event wiring |
+| `ui/handlers.py` | Streams answers, handles uploads, and copies/refreshes library state |
+| `ui/styles.py` | Theme configuration, initial dark mode, and presentation assets |
+| `ui/theme.css` | Responsive workspace styling |
+
+The `image/` folder contains project illustrations. Historical images may describe earlier designs; the current workflow is documented here and in `ARCHITECTURE.md`.
 
 ## Architecture
 
-The project applies SOLID principles through focused modules, small protocols, a provider registry, and dependency injection. RAG and indexing workflows receive their dependencies instead of constructing SDK clients internally. Provider-specific capabilities remain separate; an Assistant file adapter does not need to implement vector indexing.
+This project helps users find and understand facts in technical manuals, specifications, and requirements documents. Retrieval grounds answers in an uploaded knowledge library; optional web fallback covers questions that the library cannot support. It is an application around managed retrieval and generation, not a locally trained model or a custom vector database implementation.
 
-The API and UI call the same application services. `create_app(include_ui=False)` supports API-only tests; the normal ASGI entry point mounts the browser workspace.
+The project applies SOLID principles through focused modules, small protocols, an extensible registry, and dependency injection. API and UI boundaries both create an `AnswerCommand`. The composition root supplies the Assistant and search adapters. Evidence handling, task instructions, upload validation, and presentation have separate responsibilities.
 
-See [Architecture and SOLID principles](ARCHITECTURE.md) for dependency boundaries and instructions for adding providers.
+`create_app(include_ui=False)` supports API-only tests; the normal ASGI entry point mounts the browser workspace. Clients are constructed lazily and reused per process. Browser chat history and the remote file library have different lifetimes and do not provide user-level data isolation.
+
+See [Architecture and SOLID principles](ARCHITECTURE.md) for the execution diagram, module boundaries, limitations, and extension guidance. The [GoF catalog](ARCHITECTURE.md#design-pattern-policy) covers all 23 patterns and identifies actual usage, framework-provided behavior, and patterns reserved for future needs.
 
 ## Local setup
 
@@ -162,7 +160,7 @@ py -3.11 -m venv backend/.venv
 .\backend\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt pytest
 ```
 
-Create an untracked `backend/.env` and configure the providers you intend to use. Environment-variable names are documented below; no actual credentials are included in this repository guide.
+Create an untracked `backend/.env` and configure Pinecone Assistant and, optionally, Tavily. Environment-variable names are documented below; no actual credentials are included in this repository guide.
 
 To start the application yourself:
 
@@ -175,45 +173,56 @@ Open `http://127.0.0.1:8000/` for the workspace or `/docs` for interactive API d
 
 ## Configuration
 
-Settings load `backend/.env` independently of the current working directory. Process environment variables take precedence. Restart the app after changing provider settings because service instances are cached.
+Settings load `backend/.env` independently of the current working directory. Process environment variables take precedence. Restart after changing Assistant settings because service instances are cached. Do not commit real credentials or place them in frontend components.
 
-| Group              | Environment variables                                                                                                                                |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pinecone Assistant | `PINECONE_ASSISTANT_API_KEY`, `PINECONE_ASSISTANT_NAME`, `PINECONE_ASSISTANT_MODEL`, `PINECONE_ASSISTANT_TIMEOUT_SECONDS`                    |
-| NVIDIA generation  | `MODEL_API_KEY`, `MODEL_BASE_URL`, `MODEL_NAME`, `MODEL_TIMEOUT_SECONDS`, `MODEL_TEMPERATURE`, `MODEL_TOP_P`, `MODEL_MAX_TOKENS`       |
-| NVIDIA retrieval   | `PINECONE_API_KEY`, `PINECONE_INDEX_NAME`, `PINECONE_NAMESPACE`, `PINECONE_DIMENSION`, `PINECONE_MODEL`, `EMBEDDING_MODEL`, `HF_TOKEN` |
+| Required setting | Purpose |
+| --- | --- |
+| `PINECONE_ASSISTANT_API_KEY` | Credential authorized for the configured Assistant |
+| `PINECONE_ASSISTANT_NAME` | Name of the existing Assistant file library |
+| `PINECONE_ASSISTANT_MODEL` | Generation model supported by your Assistant configuration |
+| `PINECONE_ASSISTANT_TIMEOUT_SECONDS` | Timeout passed to Assistant chat requests |
 
-`PINECONE_MODEL` selects the reranker. `PINECONE_DIMENSION` must match dense embeddings when that path is used. Current NVIDIA configuration validation still requires the retrieval settings listed above, even when integrated embeddings skip Hugging Face inference calls. Assistant configuration does not require NVIDIA credentials.
+| Optional setting | Default | Meaning |
+| --- | --- | --- |
+| `TAVILY_API_KEY` | Empty | Required only when web fallback actually searches |
+| `WEB_SEARCH_MAX_RESULTS` | `3` | Search result limit, from 1 to 5 |
+| `WEB_SEARCH_TIMEOUT_SECONDS` | `8` | Search request timeout, from 1 to 30 seconds |
+| `MAX_UPLOAD_MB` | `5` | Upload limit, from 1 to 100; converted using 1024 x 1024 bytes |
+| `UI_QUEUE_SIZE` | `8` | Gradio queue capacity, from 1 to 1000 |
+| `UI_CONCURRENCY` | `1` | Gradio event concurrency, from 1 to 32 |
 
-| Optional setting          | Default   | Meaning                                         |
-| ------------------------- | --------- | ----------------------------------------------- |
-| `MODEL_ENABLE_THINKING` | `false` | Default NVIDIA reasoning option                 |
-| `MAX_UPLOAD_MB`         | `5`     | Upload limit; converted using 1024 x 1024 bytes |
-| `UI_QUEUE_SIZE`         | `8`     | Gradio queue capacity                           |
-| `UI_CONCURRENCY`        | `1`     | Default Gradio event concurrency                |
+These are conservative defaults for a small hosting instance, not a guarantee of memory usage. UI concurrency does not limit direct API calls or guarantee a single in-flight operation across every event type. Hosted-model latency and provider quotas remain external constraints.
 
-These are conservative defaults for a small hosting instance, not a guarantee of memory usage. UI concurrency does not limit direct API calls or guarantee a single in-flight operation across every event type. Existing cloud environment values override defaults.
+The active app does not require separate vector-index credentials or embedding settings. Extra environment fields are ignored. Configuration summaries expose field names and model information, not credential values.
 
-Keep `backend/requirements.txt` and `backend/pyproject.toml` dependency declarations synchronized; CI checks their equality. `backend/app/requirements.txt` forwards to the backend requirements file. Use `pinecone`, not the deprecated `pinecone-client` package.
+Keep `backend/requirements.txt` and `backend/pyproject.toml` dependencies synchronized; CI checks their equality. `backend/app/requirements.txt` forwards to backend requirements. Use the `pinecone` package; the application does not require the former local document-processing dependencies.
 
 ## Using the workspace
 
-1. Select **Pinecone Assistant** or **NVIDIA model**.
-2. Refresh the connection and inspect readiness.
-3. Upload a PDF or TXT file to the selected provider.
-4. For Assistant, wait for processing to finish. For NVIDIA, wait for indexing to complete.
-5. Enter a question or click a suggested question to submit it.
-6. For NVIDIA, five passages are retrieved automatically; thinking mode remains optional.
+1. Open the workspace; it checks Pinecone Assistant readiness and loads the remote file list.
+2. Upload a PDF or TXT file using the sidebar.
+3. Wait for Available status. Reload the page if processing is still in progress.
+4. Select a Pinecone task: General, Summarize, Explain, or Find requirements.
+5. Enable **Allow web search** only when public-source fallback is wanted.
+6. Enter a question, or click a suggested question to send it using the current controls.
+7. Use **New chat** and saved conversation titles to organize browser-local transcripts.
 
-Switching providers changes the destination for subsequent operations. Questions are independent: visible chat history is not sent as conversational context to either provider.
+Each question is independent. Visible or restored chat history is not sent as conversational context. All users of the same configured backend access the same Assistant library; a new chat does not create a private document collection.
 
-## NVIDIA answering
+## Pinecone answering and task policies
 
-Questions go directly into the grounded answer prompt. The frontend retrieves up to five passages automatically; API clients can override `top_k` (1-50), with null selecting five. Assistant manages its own retrieval. Generic document context is bounded to 16,000 characters, and model output uses `MODEL_MAX_TOKENS`. NVIDIA is document-only and has no web-search adapter.
+Assistant manages retrieval internally. The app sends the question, a request-scoped task policy, and evidence instructions; it does not set a custom `top_k`, reranker, local embedding model, or thinking switch.
 
-`services/skills.py` is retained as an inactive reference file. Nothing in the application imports it. There is no skill field, routing, or task-specific policy in the API, UI, commands, prompts, or services. Summaries and explanations are requested through the question itself. Older clients sending an extra `skill` property receive the same generic behavior because unknown request properties are ignored.
+| Skill value | Sidebar label | Requested behavior |
+| --- | --- | --- |
+| `general` | General | Answer directly; expand when the question requires detail |
+| `summarize` | Summarize | Up to five bullets, preserving caveats and acknowledging limited evidence coverage |
+| `explain` | Explain | Clear explanation and essential details; examples only when supported |
+| `requirements` | Find requirements | Preserve exact wording, identifiers, conditions, and mandatory/optional distinctions |
 
-Passage labels identify supplied context, not verified page citations. Summaries cover retrieved passages, not necessarily the whole document.
+All policies request grounded claims and available source citations, prohibit invented facts/URLs, and treat retrieved content as reference data rather than instructions. Insufficient-evidence handling takes precedence over formatting. Summaries cover retrieved evidence, not necessarily every page of every uploaded document.
+
+The same policy applies to a web fallback answer. Only the original question is sent to Tavily. Policies do not mutate the remote Assistant's global configuration, add a classification request, or guarantee model compliance. The default is `general`, and policy state does not leak between requests.
 
 ## API reference
 
@@ -229,18 +238,20 @@ Passage labels identify supplied context, not verified page citations. Summaries
 
 Add `?check_connection=true` to a provider request to perform a remote status check. Liveness alone does not verify provider credentials or availability.
 
-Example NVIDIA chat body:
+Example Pinecone chat body:
 
 ```json
 {
   "query": "What startup requirements are stated in the documents?",
-  "provider": "nvidia",
-  "top_k": 5,
-  "enable_thinking": false
+  "provider": "pinecone",
+  "skill": "requirements",
+  "web_search": false
 }
 ```
 
-Provider defaults to `pinecone`, retrieval count to `5`. Questions must be nonblank and at most 12,000 characters. API retrieval counts range from 1 to 50; the frontend always uses the default retrieval count. Streaming failures after headers are sent appear in the response body rather than changing the HTTP status.
+`provider` defaults to `pinecone`, `skill` to `general`, and `web_search` to `false`. Only Pinecone is accepted; unsupported providers or skills return HTTP 422. Questions must be nonblank and at most 12,000 characters. The optional `chat_id` is accepted but does not enable server-side conversational memory. Unknown JSON fields are ignored; old retrieval/thinking fields have no effect.
+
+Uploads use multipart `file`, with optional `provider=pinecone`, and return HTTP 201 after the service accepts the upload. File processing may still be ongoing. Invalid file content/extension, oversized uploads, and invalid provider selection produce validation errors. Streaming failures after headers are sent appear in the response body rather than changing the HTTP status.
 
 ## Testing
 
@@ -248,11 +259,11 @@ From the repository root:
 
 ```powershell
 .\backend\.venv\Scripts\python.exe -m pytest -q
-.\backend\.venv\Scripts\python.exe -m pytest tests/test_rag_options.py -v
+.\backend\.venv\Scripts\python.exe -m pytest tests/test_assistant_skills.py -v
 .\backend\.venv\Scripts\python.exe -m pip check
 ```
 
-`pytest.ini` selects `tests/` and adds `backend/` to the import path. Tests cover routing, upload limits and cleanup, provider isolation, retrieval modes, schema validation, streaming, UI wiring, and dependency-injection contracts. External services are mocked, and API calls use an in-process test client.
+`pytest.ini` selects `tests/` and adds `backend/` to the import path. Tests cover routing, upload limits and cleanup, Pinecone-only routing, task policies, web fallback, schema validation, streaming, UI wiring, and dependency-injection contracts. External services are mocked, and API calls use an in-process test client.
 
 See [the test suite guide](tests/README.md) for the file-by-file map. Offline tests do not validate real provider responses, browser interaction, or production load. CI separately starts a container to check its health and frontend response.
 
@@ -340,98 +351,104 @@ The workflow publishes to `<Docker Hub username>/rag-knowledge-assistant`; creat
 
 Keep deployment credentials in GitHub secrets and runtime credentials in the hosting environment. Do not paste real values into YAML, source files, examples, or documentation.
 
-After reviewing changes, push to `main` or merge a checked pull request. Include `[deploy]` in the final commit message only when a release is intended. Monitor GitHub Actions; after a release, verify the live health endpoint, uploads, and chat for both providers.
+After reviewing changes, push to `main` or merge a checked pull request. Include `[deploy]` in the final commit message only when a release is intended. Monitor GitHub Actions; after a release, verify the live health endpoint, uploads, and Pinecone chat.
 
 ## Operational considerations
 
-- Gradio uses process-local queue/session state. Verify session routing and shared-state requirements before deploying multiple workers or replicas.
-- Uploaded PDF parsing can consume more memory than the file size. The NVIDIA PDF loader extracts text but does not implement OCR for scanned images.
-- Gradio temporary uploads are eligible for cleanup after 24 hours, checked hourly. API document parsing uses in-memory content.
-- Provider clients are reused. Integrated index queries skip Hugging Face calls; single-result searches skip reranking. NVIDIA streams tokens and records timing information.
-- Output/context limits reduce request size; they do not guarantee faster hosted-model responses. No cross-request retrieval-result cache is implemented.
-- Hosting scale-to-zero can add cold-start latency. Check actual resource usage and provider latency under representative traffic.
-- Authentication, per-user library isolation, and distributed rate limiting are not implemented. Provider libraries are shared within the configured account/namespace. Protect public access and apply appropriate request limits before handling private documents.
-- Dependencies have compatibility ranges but are not fully locked. The Docker and cloud builds are separate, so exact dependency reproducibility is not guaranteed.
+- Gradio queue/session state and cached clients are process-local. Verify routing and shared-state requirements before deploying multiple workers or replicas.
+- Gradio temporary uploads are eligible for cleanup after 24 hours, checked hourly. API uploads read at most the configured byte limit plus one byte and close incoming files in a `finally` block.
+- Assistant handles document parsing and retrieval remotely. This app does not implement local OCR, local PDF parsing, or independent embedding/index management.
+- Assistant uploads use the SDK's asynchronous-processing mode (`timeout=-1`); the chat timeout setting is not an overall upload/processing deadline. Check remote availability after upload.
+- A supported document answer uses one generation call and no search. Web fallback can require one search and a second generation call, increasing total latency and external usage.
+- No cross-request answer or retrieval-result cache is implemented. Larger timeouts allow longer waits; they do not speed up inference. Scale-to-zero can add cold-start latency.
+- Authentication, per-user library isolation, and distributed rate limiting are not implemented. Protect public access before handling private documents.
+- Browser-local transcripts can persist on shared computers. Questions sent to public search may contain private information even though uploaded file contents are not forwarded to Tavily.
+- Dependencies have compatibility ranges but are not fully locked. Docker and cloud builds are separate, so exact dependency reproducibility is not guaranteed.
 
 ## Troubleshooting
 
-| Symptom                              | Check                                                                             |
-| ------------------------------------ | --------------------------------------------------------------------------------- |
-| Provider shows setup required        | Required environment-variable names and values; restart after changes             |
-| Assistant cannot find NVIDIA uploads | Upload to Assistant separately; storage is provider-specific                      |
-| Assistant files are still processing | Refresh until the remote files become available                                   |
-| Dense-vector dimension/schema error  | Index schema, embedding width, and configured dimension                           |
-| Upload is rejected                   | PDF/TXT extension and`MAX_UPLOAD_MB`                                            |
-| Response stops at the length limit   | Narrow the question or review the model and web-mode output limits                |
-| CI dependency consistency fails      | Match requirements and project dependency declarations                            |
-| Container job fails                  | Startup logs, dependency compatibility, health status, and frontend HTTP response |
-| Cloud deployment fails               | Deployment secrets, token validity, application directory, and cloud build logs   |
+| Symptom | Check |
+| --- | --- |
+| Assistant shows setup required | Required environment-variable names and values; restart after changes |
+| Connection fails | Assistant access, name, credentials, remote service availability, and network access |
+| Files remain Processing | Reload the page later; processing is remote and no periodic polling runs |
+| Document not found in answers | Confirm it is uploaded to the configured Assistant and available; another index/library is not searched |
+| Upload is rejected | PDF/TXT extension, nonempty bytes, and `MAX_UPLOAD_MB` |
+| Answer says knowledge is unavailable | Ask a more specific question, add relevant documents, or permit web fallback |
+| Search reports missing configuration | Set `TAVILY_API_KEY` privately and restart |
+| Only search excerpts appear | Assistant reported no files; upload an available file for generated answers |
+| An answer is slow | Compare first-token/total time and remote service status; fallback makes additional network calls |
+| Saved chat is missing on another device | History is browser-local, not synchronized to the backend |
+| CI dependency consistency fails | Match requirements and project dependency declarations |
+| Container job fails | Startup logs, dependency compatibility, health status, and frontend HTTP response |
+| Cloud deployment fails | Deployment secrets, token validity, application directory, and cloud build logs |
 
 This guide contains configuration names and generic examples only. Supply credentials privately in your own environment.
 
 ## Acknowledgments
 
-This project uses the following API services and acknowledges the teams that provide them:
+This project acknowledges the API companies and maintainers whose services support its current implementation:
 
-| Provider                                                             | Contribution to this project                                                                                                                                        |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Pinecone](https://www.pinecone.io/)                                  | Pinecone Assistant for managed document uploads, retrieval, and chat; Pinecone indexes for NVIDIA retrieval, integrated embeddings where configured, and reranking. |
-| [NVIDIA](https://build.nvidia.com/)                                   | Hosted model inference for streamed answers in the NVIDIA provider workflow.                                                                                        |
-| [Hugging Face](https://huggingface.co/docs/inference-providers/index) | Hosted feature-extraction inference through`huggingface_hub.InferenceClient` for the dense-vector embedding path.                                                 |
+| Provider | Contribution |
+| --- | --- |
+| [Pinecone](https://www.pinecone.io/) | Managed Assistant file library, retrieval, and answer generation |
+| [Tavily](https://tavily.com/) | Optional public web search when uploaded evidence cannot answer |
 
 ### SDKs, frameworks, and delivery tools
 
-Thanks also to the maintainers of FastAPI, Gradio, Pydantic, LangChain Core and Text Splitters, NumPy, pypdf, Uvicorn, pytest, and the other dependencies that support this application.
+Thanks to the maintainers of FastAPI, Gradio, Pydantic, LangChain Core, HTTPX, Uvicorn, pytest, and the project's other dependencies. LangChain Core provides the structured search-tool integration; it is not an MCP server or an additional model-generation layer here.
 
-The [OpenAI Python SDK](https://github.com/openai/openai-python) provides the client used to call the configured NVIDIA OpenAI-compatible endpoint. SDK usage here does not mean the NVIDIA workflow sends its requests to OpenAI's hosted API.
-
-The delivery workflow uses GitHub Actions for automation, Docker and Docker Hub for container builds and image publication, and FastAPI Cloud for application hosting.
-
-Model selection is configurable. Credit for individual model weights belongs to their respective authors and publishers; consult the selected model's documentation for attribution and licensing details. These acknowledgments describe technology usage and do not imply sponsorship or endorsement.
+GitHub Actions provides automation, Docker and Docker Hub provide image build/publication, and FastAPI Cloud provides the configured deployment destination. Credit for individual models belongs to their publishers. These acknowledgments do not imply sponsorship or endorsement.
 
 ## Optional document-first web fallback
 
-Both providers first answer from their own document library. Only Pinecone Assistant supports web fallback; NVIDIA ignores the API `web_search` option and returns a no-knowledge message when documents cannot answer. **Allow web search** is off by default. With it disabled, insufficient document evidence produces an explicit no-knowledge message. With it enabled, insufficient evidence triggers one Tavily search, followed by an answer from Pinecone Assistant with linked page titles. Empty or insufficient web evidence produces a no-answer message.
+**Allow web search** is off by default. Pinecone first attempts an answer from its document library. If evidence is insufficient, search stays off unless the current request explicitly enables it. Supported document answers never trigger search.
 
-The ordinary document-answer call is also the evidence decision: the prompt requests a private control marker only if evidence cannot answer the question. A bounded streaming gate suppresses that marker even across token boundaries; normal answers stream immediately once the marker is ruled out. There is no separate classifier call. A supported document answer makes one generation call and zero search calls; fallback with nonempty documents can make two generation calls. Empty NVIDIA retrieval skips the first generation. Timeouts, authentication failures, empty model streams, and malformed partial markers are errors, not fallback decisions.
+The ordinary document-answer request also supplies the evidence decision: instructions request a private control marker only when evidence cannot answer. `answer_evidence.py` buffers a possible opening marker or recognized refusal across token boundaries, up to its decision threshold, and streams ordinary text once that ambiguity is resolved. There is no separate classifier call.
 
-This is model-based evidence assessment, not proof of answerability. A model can miss evidence or fail to follow the marker instruction; a response without the marker or a recognized explicit refusal is treated as its document answer. Pinecone's managed instructions may also affect this behavior. Live provider validation has not been performed.
+On insufficient document evidence, one Tavily search returns bounded excerpts. Assistant then receives those excerpts with the original question and the same task policy. Source links use page titles from search metadata, with a hostname fallback. Unsafe schemes and duplicate results are filtered; source text is treated as untrusted evidence. Search results are not uploaded to the library.
 
-Optional backend settings (use private environment values):
+Empty search results or an unsupported web answer produce an explicit no-answer message. If Assistant reports no files, the application can display labelled public excerpts and links instead of claiming a generated answer. Timeouts, authentication failures, empty model streams, and malformed partial markers are errors, not fallback decisions.
 
-```dotenv
-TAVILY_API_KEY=your-tavily-api-key
-WEB_SEARCH_MAX_RESULTS=3
-WEB_SEARCH_TIMEOUT_SECONDS=8
-MODEL_MAX_RETRIES=0
-```
+This is model-based evidence assessment, not proof of answerability. A model may miss evidence or fail to follow instructions. An answer without the marker or a recognized refusal is treated as supported by the document path. Prompt policies and phrase checks cannot guarantee factual correctness.
 
-API: `POST /api/chat/stream` with `{"query":"your question","provider":"pinecone","web_search":true}`. Use `nvidia` for document-only NVIDIA generation; `web_search` is ignored for that provider. Tavily receives only the original question on fallback, not uploaded document contents. A question itself may contain private information. The LangChain Core tool performs one basic search with bounded excerpts and network timeout; no MCP server or background indexing is required. Document retrieval and web search are intentionally sequential to avoid unnecessary external requests.
-
-NVIDIA uses generic document context and model output limits. Its SDK retries default to zero for interactive chat. Setting `MODEL_MAX_RETRIES` to 1 or 2 explicitly opts in to additional attempts. Timeouts remain network-operation limits, not end-to-end deadlines. Increasing them allows longer waits rather than faster inference. A document-answer timeout does not trigger search.
-
-Assistant requires an available uploaded file to generate. If it reports no files, web search can return labelled excerpts and links, but the app does not silently switch models. Search results are never uploaded to either library. Named links are drawn from the search response, with hostname fallback; they are not model-invented URLs.
-
-`answer_evidence.py` owns the shared streaming decision protocol. Provider services orchestrate document-first execution; `web_search.py` implements the LangChain search adapter and source formatting. Tests in `test_answer_evidence.py` cover both providers, marker fragmentation, opt-out, unsupported web evidence, and failures. `test_web_search.py` covers the tool and integration behavior.
-
-Credits: [Tavily search](https://docs.tavily.com/documentation/api-reference/endpoint/search), [LangChain StructuredTool](https://reference.langchain.com/python/langchain-core/tools/structured/StructuredTool), and [Pinecone Assistant](https://sdk.pinecone.io/python/how-to/assistant.html).
+Use `POST /chat/stream` with `{"query":"your question","provider":"pinecone","web_search":true}`. Tavily receives only the original question; the question itself may contain private information. Search uses LangChain Core with one basic request, bounded results, and a configured network timeout. There is no MCP server or background indexing process.
 
 ### Automatic connection and library refresh
 
-The frontend has no **Refresh connection & files** button. It checks the selected provider and reloads its library when the page opens, when the answer provider changes, and after an upload. Provider selection and upload controls are temporarily disabled while these updates complete. Switching to NVIDIA preserves its session upload list; switching to Assistant loads its remote file list. Assistant processing is asynchronous: if a file is still Processing, select another provider and switch back later to reload its status. No periodic polling is performed.
+The frontend checks the connection and reloads the file list on page load and after upload. Upload controls are temporarily disabled while these updates complete. For a file still Processing, reload the page later to request its current status. No provider-switching control, manual refresh button, or periodic polling is needed for the current single-provider layout.
 
 ### Greetings and natural-language refusals
 
-Exact short greetings and acknowledgments (such as `hello`, `nice`, `good`, `wellcome`, or `thank you`) receive a local reply in the API and UI, even with search enabled. They do not initialize a provider or call retrieval/search. Messages containing a real question continue through the normal pipeline.
+Exact short messages such as `hello`, `nice`, `good`, `wellcome`, and `thank you` receive local API/UI replies without initializing a provider or searching. Messages that contain a real question follow the normal workflow.
 
-The evidence gate also recognizes a small list of explicit leading refusals, including ?You did not provide enough information to answer this question?, across streaming chunks. These trigger the same conditional web fallback as the control marker. This is conservative phrase matching, not a universal language classifier; unfamiliar refusals may still require additional handling. Transport errors remain errors rather than search decisions.
+The evidence gate recognizes specific leading refusal phrases, including "You did not provide enough information to answer this question", across streamed chunks. Matching is conservative rather than a universal language classifier. Transport errors remain errors instead of being interpreted as missing knowledge.
 
 ## Sidebar and saved chat sessions
 
-The interface uses a collapsible left sidebar with **New chat**, saved conversation titles, provider selection, dark mode, NVIDIA thinking (NVIDIA only), Pinecone web fallback (Pinecone only), document upload, and uploaded file names/status. Pinecone remains the default provider. No separate task skills are active for either provider; `skills.py` remains an unused reference.
+The collapsible sidebar contains **New chat**, saved conversation titles, dark mode, Assistant connection/model status, the Pinecone task selector, optional web fallback, document upload, and filenames/status. Pinecone is the sole active provider; no model-provider selector or thinking control is shown.
 
-Chat sessions use Gradio's built-in browser-local history. New chat clears the visible conversation; selecting an earlier title restores its transcript. Sessions are stored in the current browser's local storage, not in a shared server database, and may remain on a shared computer. Clear conversations using the chat controls or clear site data to remove stored history. History is not synchronized between devices. Do not use a shared browser for sensitive conversations.
+Saved conversations use Gradio's built-in browser-local history. New chat clears the visible conversation; selecting an earlier title restores its transcript. History is not synchronized between devices and may remain on a shared computer. Delete conversations with the chat controls or clear site data to remove stored history.
 
-Saved sessions restore messages, not provider settings or a private document collection. The currently selected provider answers the next question. Each question remains independent; restored history is displayed but is not sent as LLM context. Document libraries remain provider-specific and shared within the configured account/namespace. Assistant filenames come from its remote library; NVIDIA filenames represent this browser session's uploads because its index does not expose the original upload file library.
+Sessions restore messages, not task settings or a private document collection. Current sidebar settings control the next question. Restored history is displayed but not sent as LLM context. Document names and statuses come from the remote Assistant library shared by the configured backend.
 
-Connection and file status refresh automatically on page load, provider changes, and uploads. The sidebar is collapsible for smaller screens. The application does not run periodic remote polling. NVIDIA has no Tavily client; even an API request with `provider=nvidia, web_search=true` uses document-only generation.
+## Future improvements
+
+These are possible extensions, not capabilities enabled by this release.
+
+### Optional NVIDIA provider
+
+NVIDIA inference could be reintroduced as a separately configured provider after validating latency, streaming behavior, retry budgets, and operational cost. The former LLM helper has been removed; reintroduction would require a new, explicitly integrated generation adapter.
+
+A future implementation would need explicit settings, a supported retrieval source, an upload/storage contract, registry/schema/UI integration, and tests. Pinecone Assistant files must not be assumed to be directly interchangeable with arbitrary vector-index records. Any shared-storage proposal needs verification before claiming both providers use the same database workflow.
+
+A hosted embedding adapter, including Hugging Face, could be evaluated if a future custom retrieval path requires it. NVIDIA and Hugging Face powered earlier project experiments; neither is an active runtime integration in this release. See [future extension rules](ARCHITECTURE.md#future-extension-rules) for preserving SOLID boundaries.
+
+### Other improvements
+
+- Authentication and per-user document access controls before supporting private multi-user deployments.
+- Server-side conversation storage and opt-in conversational context with clear retention controls.
+- Bounded processing-status polling or notifications if asynchronous uploads require better feedback.
+- Structured provider metrics and representative latency/load evaluation.
+- Reproducible dependency locking and deployment promotion checks.
+- Evidence-quality evaluation, citation verification, and better handling of unrecognized refusals.

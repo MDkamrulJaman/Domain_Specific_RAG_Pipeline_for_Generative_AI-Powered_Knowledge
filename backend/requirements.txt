@@ -5,7 +5,6 @@ python-multipart
 python-dotenv
 pydantic
 pydantic-settings
-openai
 httpx
 pinecone>=10.0.0,<11
 langchain-core

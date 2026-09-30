@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Production image build and run:
 #   docker build -t rag-knowledge-assistant .
 #   docker run --rm -p 8000:8000 rag-knowledge-assistant
@@ -6,7 +7,6 @@
 # environment and the application source are copied into the slim runtime image. Uvicorn runs as
 # the non-root appuser.
 
-# syntax=docker/dockerfile:1
 # =========================
 # STAGE 1: Builder (dependency installation)
 # =========================
